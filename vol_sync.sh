@@ -21,7 +21,7 @@
 #   responsável pelos downloads do servidor.
 #
 #
-# 2026.out  mlabru  - nível [error] (era [erro]), como o met_common.sh e os
+# 2026.out  mlabru  - nível [error] (era [erro]), como o cls_common.sh e os
 #                     outros projetos
 #                   - refatoração para legibilidade: corpo do main dividido
 #                     em ensure_directories, acquire_instance_lock,

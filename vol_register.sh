@@ -23,7 +23,7 @@
 #
 # 2026.out  mlabru  - normalização com 27.nowcast/25.oflow: acquire_instance_lock
 #                     (mesmo nome do vol_sync.sh), VOL_REGISTER_NO_MAIN e nível
-#                     [error] (era [erro]; o met_common.sh e os outros
+#                     [error] (era [erro]; o cls_common.sh e os outros
 #                     projetos usam [error])
 #                   - refatoração para legibilidade: run_scan, run_purge e main
 #

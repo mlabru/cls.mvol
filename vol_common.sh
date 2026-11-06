@@ -3,15 +3,15 @@
 #
 # vol_common.sh
 # funções compartilhadas pelos scripts vol_*.sh:
-# - log: logger em UTC com rotação (sobre met_log, de met_common.sh);
+# - log: logger em UTC com rotação (sobre met_log, de cls_common.sh);
 # - launch_app: roda um app Python do projeto (virtualenv, PYTHONPATH e
 #   banners de início/fim).
-# check_log_size também fica disponível (vem de met_common.sh).
+# check_log_size também fica disponível (vem de cls_common.sh).
 #
 # 2026.out  mlabru  refatoração para legibilidade: launch_app sem variável
 #                   supérflua; comentários atualizados
 #
-# 2026.out  mlabru  check_log_size e o corpo do log() vêm do met_common.sh
+# 2026.out  mlabru  check_log_size e o corpo do log() vêm do cls_common.sh
 #                   (comum aos projetos met); o horário do log() passa a
 #                   ser UTC, como os logs Python
 #
@@ -23,13 +23,13 @@
 #
 # 2026.jun  mlabru  initial version (Linux/Bash)
 #
-# depends on: bash, met_common.sh, GI_LOG_MAX_SIZE (vol_cfg.sh) para check_log_size,
+# depends on: bash, cls_common.sh, GI_LOG_MAX_SIZE (vol_cfg.sh) para check_log_size,
 #             VOL_LOG_APP/VOL_LOG_ERR (definidas por cada script) para log()
 # shellcheck shell=bash
 
-# check_log_size e met_log (met_common.sh, symlink para 04.dvl/bash, comum
+# check_log_size e met_log (cls_common.sh, symlink para 04.dvl/bash, comum
 # aos projetos met)
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/met_common.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cls_common.sh"
 
 # < log >------------------------------------------------------------------------------
 #

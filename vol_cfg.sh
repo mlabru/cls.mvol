@@ -6,7 +6,7 @@
 #
 # 2026.out  mlabru  - comentários (refatoração para legibilidade; valores
 #                     inalterados)
-#                   - trava via met_check_test_env (met_common.sh): resolve os
+#                   - trava via met_check_test_env (cls_common.sh): resolve os
 #                     caminhos com realpath -m -- antes um caminho com ".."
 #                     (<raiz>/../producao) passava pelo padrão "<raiz>"/*
 #                   - ambiente de teste (tst_env/, 03.dat/tst): VOL_SYNC_DIR,
@@ -44,7 +44,7 @@
 #
 # 2026.jul  mlabru  initial version (Linux/Bash)
 
-# depends on: bash, met_common.sh
+# depends on: bash, cls_common.sh
 # shellcheck shell=bash
 
 # < configuração compartilhada >-------------------------------------------------------
@@ -95,9 +95,9 @@ VOL_RETAIN_MAX_DAYS="${VOL_RETAIN_MAX_DAYS:-}"
 
 # < trava do ambiente de teste >-------------------------------------------------------
 
-# met_check_test_env (met_common.sh, symlink para 04.dvl/bash, comum aos
+# met_check_test_env (cls_common.sh, symlink para 04.dvl/bash, comum aos
 # projetos met)
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/met_common.sh"
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cls_common.sh"
 
 # com MET_ENV=test (tst_env/env.sh), nada pode apontar para fora de
 # MET_TST_ROOT nem para um servidor que não seja esta máquina
