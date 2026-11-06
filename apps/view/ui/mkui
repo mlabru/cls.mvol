@@ -1,0 +1,5 @@
+###
+#  volume view
+
+# main window
+pyuic5 wnd_main_vview.ui > wnd_main_vview_ui.py

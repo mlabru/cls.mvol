@@ -1,0 +1,26 @@
+.bkp/
+.claude/
+.doc/
+.gpt/
+.new/
+.old/
+__pycache__/
+.pytest_cache/
+.venv/
+
+.env
+
+*~
+*.bak
+*.err
+*.log
+*.mvol
+*.npy
+
+# bancos SQLite (o catalog.db compartilhado mora em 27.nowcast/04.dvl/data/dbase)
+*.db
+*.db-shm
+*.db-wal
+
+# intermediários por execução (VOL_TEMP; ex: PNGs do volViewer em data/temp/viewer)
+data/temp/
