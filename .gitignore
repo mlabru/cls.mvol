@@ -6,6 +6,7 @@
 .old/
 __pycache__/
 .pytest_cache/
+tst_env/
 .venv/
 
 .env
