@@ -6,6 +6,9 @@ Copyright (c) 1995-2026, Instituto de Controle do Espaço Aéreo
 vol_record
 representa um arquivo .mvol identificado no sistema
                 
+2026.nov  mlabru  logger em INFO (era DEBUG: o trace ">> função" de cada
+                  chamada vazava para o handler do app)
+
 2026.set  mlabru  import apps.domain.product_key (RainFlow) trocado
                   por vol_product_key deste repo
 
@@ -28,7 +31,7 @@ import dbase.vol_product_key as pk
         
 # logger
 M_LOG = logging.getLogger(__name__)
-M_LOG.setLevel(logging.DEBUG)
+M_LOG.setLevel(logging.INFO)
 
 # < VolumeRecord >---------------------------------------------------------------------
 

@@ -7,6 +7,9 @@ rd_pyart_adapter
 conversão de RadarVolume (RainFlow) para pyart.core.Radar — único ponto de
 contato com Py-ART
 
+2026.nov  mlabru  logger em INFO (era DEBUG: o trace ">> função" de cada
+                  chamada vazava para o handler do app)
+
 2026.set  mlabru  import apps.ingest.radar_volume (RainFlow) trocado
                   por radar.rd_volume deste repo
 
@@ -33,7 +36,7 @@ import radar.rd_volume as rv
 
 # logger
 M_LOG = logging.getLogger(__name__)
-M_LOG.setLevel(logging.DEBUG)
+M_LOG.setLevel(logging.INFO)
 
 # -------------------------------------------------------------------------------------
 def _seconds_since(fdt_timestamp: datetime.datetime,

@@ -19,6 +19,8 @@ grava, por arquivo:
 
 o schema vive só em vol_catalog.py (compartilhado por symlink).
 
+2026.nov  mlabru  log em UTC (era hora local, contra o contrato "tudo é
+                  UTC"); loga quantas observações eram novas
 2026.out  mlabru  refatoração para legibilidade: parse_lines() usa
                   _parse_one_line() (guard clauses); write_observations()
                   monta os parâmetros em variáveis nomeadas; removido código
@@ -45,6 +47,7 @@ import datetime
 import logging
 import sqlite3
 import sys
+import time
 
 # locals
 import radar.rd_mvol as mv
@@ -284,7 +287,7 @@ def main() -> int:
 
     try:
         # grava no catalog.db compartilhado
-        write_observations(largs.dbase, llst_rows)
+        li_new_rows = write_observations(largs.dbase, llst_rows)
 
     # em caso de erro,...
     except sqlite3.Error as lerr:
@@ -293,6 +296,9 @@ def main() -> int:
         # quit fail -- vol_sync.sh não baixa (nem remove) nada sem o registro
         return 1
 
+    # logger
+    M_LOG.info("observações: %d listadas, %d novas", len(llst_rows), li_new_rows)
+
     # ok
     return 0
 
@@ -300,9 +306,10 @@ def main() -> int:
 # this is the bootstrap process
 
 if "__main__" == __name__:
-    # logger
-    logging.basicConfig(datefmt="%Y/%m/%d %H:%M",
-                        format="%(asctime)s %(message)s",
+    # logger (horários do log em UTC, como todo o resto do sistema)
+    logging.Formatter.converter = time.gmtime
+    logging.basicConfig(datefmt="%Y/%m/%d %H:%M:%S",
+                        format="%(asctime)s %(levelname)s %(message)s",
                         level=logging.INFO)
 
     # run

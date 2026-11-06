@@ -6,6 +6,10 @@ Copyright (c) 1995-2026, Instituto de Controle do Espaço Aéreo
 rd_scan
 modelos de dados de um volume de radar (RadarScan, RadarVolume)
 
+2026.nov  mlabru  - fix: RadarScan.azimuth por média circular (feixe que
+                    cruzava o norte, 359 -> 1, saía com azimute 180)
+                  - logger em INFO (era DEBUG: trace por chamada vazava)
+
 2026.may  mlabru  initial version (Linux/Python)
 """
 # < imports >──────────────────────────────────────────────────────────────────────────
@@ -24,7 +28,7 @@ import numpy as np
 
 # logger
 M_LOG = logging.getLogger(__name__)
-M_LOG.setLevel(logging.DEBUG)
+M_LOG.setLevel(logging.INFO)
 
 # < RadarScan >------------------------------------------------------------------------
 
@@ -119,8 +123,18 @@ class RadarScan:
     #
     @property
     def azimuth(self) -> np.ndarray:
-        """azimute central de cada feixe"""
-        return (self.azimuth_start + self.azimuth_stop) / 2.0
+        """
+        azimute central de cada feixe, em [0, 360).  média circular, como o
+        Py-ART (_avg_radial_angles): a média simples de um feixe que cruza o
+        norte (359 -> 1) dava 180
+        """
+        lc_mean = (np.exp(1j * np.deg2rad(self.azimuth_start)) +
+                   np.exp(1j * np.deg2rad(self.azimuth_stop))) / 2.0
+
+        l_azimuth = np.angle(lc_mean, deg=True) % 360.0
+
+        # -1e-15 % 360 dá 360.0 em ponto flutuante: mantém em [0, 360)
+        return np.where(l_azimuth >= 360.0, 0.0, l_azimuth)
 
     @property
     def elevation_angles(self) -> np.ndarray:

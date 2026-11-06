@@ -23,13 +23,18 @@ arquivos fazia o nwcConvert morrer com "database is locked".
 
 regras:
 - o horário do nome é UTC; o timestamp gravado é o epoch desse instante;
-- incremental: mesmo fullpath e mesmo filesize = nada mudou, pula sem SHA1;
+- incremental: mesmo fullpath, mesmo filesize e has_mvol=1 = nada mudou,
+  pula sem SHA1 (com has_mvol=0 o arquivo voltou: UPDATE, has_mvol=1);
 - um segundo arquivo para um volume já registrado cujo arquivo ainda existe
   (ex.: cópia "(1)") é ignorado, em vez de alternar entre os dois.
 
 uso:
     python volScan.py <catalog.db> --raw-dir <dir> [--raw-dir <dir>...] [--no-sha1]
 
+2026.nov  mlabru  fix: arquivo presente com has_mvol=0 (marcado ausente pelo
+                  volPurge e depois devolvido) era pulado e ficava com
+                  has_mvol=0 para sempre -- fora da retenção e da view
+                  cappi_pending; agora é UPDATE (has_mvol=1)
 2026.out  mlabru  refatoração para legibilidade: scan() dividido em uma
                   função por fase; ações como constantes CS_ACTION_*;
                   candidatos como CVolumeCandidate (sem tuplas posicionais)
@@ -248,8 +253,11 @@ def _decide_action(frow, fs_fullpath: str, fi_filesize: int) -> str:
 
     lb_same_file = frow["fullpath"] == fs_fullpath
 
-    # mesmo arquivo, mesmo tamanho: nada mudou
-    if lb_same_file and frow["filesize"] == fi_filesize:
+    # mesmo arquivo, mesmo tamanho e o banco sabe que ele existe: nada mudou.
+    # com has_mvol=0 (volPurge o achou ausente -- montagem instável, arquivo
+    # devolvido) é UPDATE: pular deixaria has_mvol=0 para sempre, e o volume
+    # sairia da retenção e da view cappi_pending (que exige has_mvol=1)
+    if lb_same_file and frow["filesize"] == fi_filesize and frow["has_mvol"] == 1:
         return CS_ACTION_SKIP
 
     # outro arquivo, ainda presente, para o mesmo volume (ex: cópia "(1)" ou o
