@@ -127,6 +127,21 @@ def test_ausente_so_corrige_has_mvol(env):
     assert {MI_NOW - 8 * MI_DAY: 0} == _has_mvol(ls_db)
 
 # -------------------------------------------------------------------------------------
+def test_ausente_sem_diretorio_nao_marca(env):
+    """
+    diretório da estação sumiu (montagem parcial): não é "ausente", has_mvol
+    fica 1 -- a raiz do sync-dir não está vazia, então _check_sync_dir passa
+    """
+    ls_db, lpth_sync, add = env
+    li_ts = MI_NOW - 8 * MI_DAY
+    add(li_ts, fb_write=False, fpth=lpth_sync / "Santiago" / "250" / "STI-250--x.mvol")
+
+    lctr = _purge(ls_db, lpth_sync)
+
+    assert (0, 0, 1) == (lctr[vp.CS_REMOVED], lctr[vp.CS_MISSING], lctr[vp.CS_NO_DIR])
+    assert {li_ts: 1} == _has_mvol(ls_db)
+
+# -------------------------------------------------------------------------------------
 def test_fora_do_sync_dir_nao_e_apagado(env, tmp_path):
     ls_db, lpth_sync, add = env
     lpth = add(MI_NOW - 8 * MI_DAY, fpth=tmp_path / "outro" / "CGU-250.mvol")

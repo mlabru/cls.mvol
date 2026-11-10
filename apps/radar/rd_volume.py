@@ -6,6 +6,9 @@ Copyright (c) 1995-2026, Instituto de Controle do Espaço Aéreo
 rd_volume
 modelos de dados de um volume de radar (RadarScan, RadarVolume)
 
+2026.nov  mlabru  logger em INFO (era DEBUG: o trace ">> função" de cada
+                  chamada vazava para o handler do app)
+
 2026.set  mlabru  RadarScan passa a ser importado de radar.rd_scan (só
                   funcionava por causa de 'from __future__ import annotations')
 
@@ -30,7 +33,7 @@ import radar.rd_scan as rs
 
 # logger
 M_LOG = logging.getLogger(__name__)
-M_LOG.setLevel(logging.DEBUG)
+M_LOG.setLevel(logging.INFO)
 
 # < RadarVolume >----------------------------------------------------------------------
 

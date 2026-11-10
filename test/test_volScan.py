@@ -7,6 +7,7 @@ test_volScan
 testes unitários de volScan (registro dos .mvol na tabela volumes:
 timestamp UTC, varredura incremental, nomes inválidos)
 
+2026.nov  mlabru  arquivo devolvido com has_mvol=0 volta a has_mvol=1
 2026.out  mlabru  o SHA1 roda sem lock de escrita; reconferência na escrita
 2026.set  mlabru  initial version (Linux/Python)
 """
@@ -56,6 +57,29 @@ def test_scan_registra_com_timestamp_utc(tmp_path):
     assert 3 == lrow["filesize"]
     # SHA1 de b"abc"
     assert "a9993e364706816aba3e25717850c26c9cd0d89d" == lrow["sha1"]
+
+# -------------------------------------------------------------------------------------
+def test_scan_arquivo_devolvido_volta_a_has_mvol_1(tmp_path):
+    """
+    volPurge marcou has_mvol=0 (achou ausente), mas o arquivo está lá: não
+    pode ser pulado, senão fica has_mvol=0 para sempre
+    """
+    ls_db = str(tmp_path / "catalog.db")
+    lpth_raw = _tree(tmp_path)
+
+    li_ts = int(datetime.datetime(2026, 6, 15, 13, 40, 22,
+                                  tzinfo=datetime.timezone.utc).timestamp())
+
+    vs.scan(ls_db, [lpth_raw])
+
+    with vd.transaction_write(ls_db) as ldb:
+        ldb.mark_mvol_removed("CGU", 250, li_ts)
+
+    ldct = vs.scan(ls_db, [lpth_raw])
+    assert (0, 1, 1) == (ldct["inserted"], ldct["updated"], ldct["skipped"])
+
+    with vd.transaction(ls_db) as ldb:
+        assert 1 == ldb.get_volume("CGU", 250, li_ts)["has_mvol"]
 
 # -------------------------------------------------------------------------------------
 def test_scan_incremental_pula_inalterados(tmp_path):

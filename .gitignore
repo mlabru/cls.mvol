@@ -2,6 +2,7 @@
 .claude/
 .doc/
 .gpt/
+logs/
 .new/
 .old/
 __pycache__/

@@ -21,7 +21,8 @@ conversor nunca apaga nem move).
   estar vazio: um ponto de montagem desmontado é um diretório vazio, e todo
   .mvol pareceria ausente
 
-- arquivo que já não existe: só corrige has_mvol=0
+- arquivo que já não existe: só corrige has_mvol=0 -- se o diretório dele
+  existir (diretório ausente = montagem parcial: não marca, só avisa)
 
 - apaga primeiro e grava o banco depois, numa transação: se a gravação
   falhar, o próximo run acha o arquivo ausente e corrige has_mvol
@@ -32,6 +33,8 @@ uso:
     python volPurge.py <catalog.db> --sync-dir <dir> --retain-days N
                        [--max-days M] [--dry-run]
 
+2026.nov  mlabru  arquivo ausente cujo diretório também sumiu não vira
+                  has_mvol=0 (montagem parcial; contador "sem diretório")
 2026.out  mlabru  refatoração para legibilidade: purge() dividido em
                   _check_sync_dir, _compute_cutoffs, _purge_one_file,
                   _mark_removed_in_dbase e _log_summary; ternários longos
@@ -62,10 +65,11 @@ CS_REMOVED = "removidos"
 CS_MISSING = "ausentes"
 CS_FORCED = "forçados"
 CS_OUTSIDE = "fora do sync-dir"
+CS_NO_DIR = "sem diretório"
 CS_ERROR = "erros"
 
 # ordem dos contadores na linha de resumo do log
-MT_SUMMARY_ORDER = (CS_REMOVED, CS_MISSING, CS_FORCED, CS_OUTSIDE, CS_ERROR)
+MT_SUMMARY_ORDER = (CS_REMOVED, CS_MISSING, CS_FORCED, CS_OUTSIDE, CS_NO_DIR, CS_ERROR)
 
 # < logging >──────────────────────────────────────────────────────────────────────────
 
@@ -212,8 +216,18 @@ def _purge_one_file(fdct_candidate: dict, fpth_sync_dir: pathlib.Path, fb_dry_ru
         M_LOG.warning("%s ainda pendente, apagado pelo limite de disco", lpth_file.name)
         fctr_summary[CS_FORCED] += 1
 
-    # arquivo já não existe: só corrige o banco
+    # arquivo já não existe: só corrige o banco -- se o diretório dele
+    # existir.  a retenção nunca apaga diretórios, então diretório ausente é
+    # montagem parcial/estação desmontada (o teste de sync-dir vazio só pega
+    # a raiz): não marca, ou has_mvol=0 ficaria errado quando ele voltar
     if not lpth_file.exists():
+        if not lpth_file.parent.is_dir():
+            # logger
+            M_LOG.warning("diretório ausente, has_mvol mantido: %s", lpth_file.parent)
+            fctr_summary[CS_NO_DIR] += 1
+            # não marca
+            return False
+
         fctr_summary[CS_MISSING] += 1
         # marca
         return True

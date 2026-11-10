@@ -21,6 +21,12 @@
 #   responsável pelos downloads do servidor.
 #
 #
+# 2026.nov  mlabru  - list_remote_files: stderr do ssh/find separado da
+#                     listagem (antes 2>&1 misturava avisos nas linhas); um
+#                     erro parcial do find remoto (rc != 0 com linhas
+#                     listadas) só avisa, em vez de abortar toda a
+#                     sincronização a cada execução; rc 255 (ssh) aborta
+#
 # 2026.out  mlabru  - nível [error] (era [erro]), como o cls_common.sh e os
 #                     outros projetos
 #                   - refatoração para legibilidade: corpo do main dividido
@@ -123,22 +129,47 @@ build_transfer_list() {
 # vai para o catalog.db e para o --files-from) -- o mtime é só informativo (hora de chegada
 # pelo relógio do servidor); nenhuma decisão aqui depende dele
 #
+# stdout e stderr ficam separados: avisos do ssh/find nunca entram na
+# listagem.  rc 255 é falha do próprio ssh (conexão/autenticação): aborta.
+# outro rc != 0 vem do find remoto (ex.: um subdiretório sem permissão):
+# a listagem parcial ainda é válida (só tem .mvol completos), então segue
+# com ela e avisa; sem nenhuma linha, aborta
+#
 list_remote_files() {
 
     # logger
     log "[info]: listando os arquivos do servidor..."
 
     # parameters
-    local ls_output
+    local ls_output ls_stderr ls_err_file
+    local li_rc=0
+
+    ls_err_file=$(mktemp -p "${VOL_TEMP}" vol_sync_ssh.XXXXXX)
 
     # conecta via ssh e gera lista de arquivos do servidor
-    # stderr real do ssh vai para VOL_LOG_ERR em caso de falha
-    if ! ls_output=$(ssh "${MT_SSH_OPTS[@]}" "${VOL_REMOTE_HOST}" \
-        "find '${VOL_REMOTE_DIR}/' -type f -name '*.mvol' -printf '%T@|%P\n'" 2>&1); then
+    ls_output=$(ssh "${MT_SSH_OPTS[@]}" "${VOL_REMOTE_HOST}" \
+        "find '${VOL_REMOTE_DIR}/' -type f -name '*.mvol' -printf '%T@|%P\n'" \
+        2>"${ls_err_file}") || li_rc=$?
+
+    ls_stderr=$(<"${ls_err_file}")
+    rm -f "${ls_err_file}"
+
+    # falha do ssh, ou do find sem nenhuma linha listada
+    if [ "${li_rc}" -eq 255 ] || { [ "${li_rc}" -ne 0 ] && [ -z "${ls_output}" ]; }; then
         # logger
-        echo "[$(date -u '+%F %T')] [error]: ssh falhou ao listar '${VOL_REMOTE_HOST}': ${ls_output}" >> "${VOL_LOG_ERR}"
+        echo "[$(date -u '+%F %T')] [error]: ssh/find falhou (rc=${li_rc}) ao listar '${VOL_REMOTE_HOST}': ${ls_stderr}" >> "${VOL_LOG_ERR}"
         # quit fail
         return 1
+    fi
+
+    if [ "${li_rc}" -ne 0 ]; then
+        # logger
+        log "[warn]: listagem parcial (find rc=${li_rc}); seguindo com o que foi listado. veja ${VOL_LOG_ERR}"
+        echo "[$(date -u '+%F %T')] [warn]: find remoto (rc=${li_rc}): ${ls_stderr}" >> "${VOL_LOG_ERR}"
+
+    elif [ -n "${ls_stderr}" ]; then
+        # avisos do ssh (ex.: known_hosts) com rc 0: só registra
+        echo "[$(date -u '+%F %T')] [warn]: ssh: ${ls_stderr}" >> "${VOL_LOG_ERR}"
     fi
 
     # ok
