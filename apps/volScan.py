@@ -31,6 +31,12 @@ regras:
 uso:
     python volScan.py <catalog.db> --raw-dir <dir> [--raw-dir <dir>...] [--no-sha1]
 
+2026.nov  mlabru  escala: caminho rápido na fase 1 (índice fullpath -> tamanho
+                  numa consulta; arquivo inalterado pulado sem parse_mvol nem
+                  consulta), raiz resolvida uma vez e ordenação pela string --
+                  com um ano de .mvol (210 mil, nada novo), ~27 s -> ~3,5 s
+2026.nov  mlabru  imports cls_common.* (pacote do repo cls.common, via
+                  CLS_PYLIB; antes symlinks de diretório)
 2026.nov  mlabru  fix: arquivo presente com has_mvol=0 (marcado ausente pelo
                   volPurge e depois devolvido) era pulado e ficava com
                   has_mvol=0 para sempre -- fora da retenção e da view
@@ -67,10 +73,10 @@ import time
 import typing
 
 # radar
-import radar.rd_mvol as mv
+import cls_common.radar.rd_mvol as mv
 
 # locals
-import dbase.vol_dbase as vd
+import cls_common.dbase.vol_dbase as vd
 
 # < constants >────────────────────────────────────────────────────────────────────────
 
@@ -194,8 +200,11 @@ def list_mvol_files(flst_dirs: list) -> list:
             # next
             continue
 
-        # busca recursiva ordenada
-        llst_dir_files = sorted(lpth_dir.rglob("*.mvol"))
+        # busca recursiva a partir da raiz já resolvida: os caminhos saem
+        # canônicos sem um resolve() por arquivo (ver _canonical_path).
+        # Ordem determinística pela string do caminho -- comparar objetos
+        # Path é ~10x mais caro, e com 200 mil arquivos isso pesava
+        llst_dir_files = sorted(lpth_dir.resolve().rglob("*.mvol"), key=str)
 
         # logger
         M_LOG.info("arquivo(s) .mvol em %s: %d", lpth_dir, len(llst_dir_files))
@@ -206,12 +215,30 @@ def list_mvol_files(flst_dirs: list) -> list:
     return llst_files
 
 # -------------------------------------------------------------------------------------
-def _read_mvol_identity(fpth_file: pathlib.Path) -> CVolumeCandidate | None:
+def _canonical_path(fpth_file: pathlib.Path) -> str:
+    """
+    caminho absoluto canônico, como é gravado em volumes.fullpath.  A
+    listagem já parte da raiz resolvida, então só um arquivo que seja ele
+    próprio symlink precisa de resolve() (um lstat, em vez de um por
+    componente do caminho)
+    """
+    if fpth_file.is_symlink():
+        # ok
+        return str(fpth_file.resolve())
+
+    # ok
+    return str(fpth_file)
+
+# -------------------------------------------------------------------------------------
+def _read_mvol_identity(fpth_file: pathlib.Path, fs_fullpath: str,
+                        fi_filesize: int) -> CVolumeCandidate | None:
     """
     monta o candidato de um arquivo a partir do nome (radar, alcance,
-    horário UTC) e do stat (tamanho)
+    horário UTC)
 
     :param fpth_file: .mvol encontrado
+    :param fs_fullpath: caminho canônico (_canonical_path)
+    :param fi_filesize: tamanho em bytes
 
     :returns: CVolumeCandidate (sem SHA1), ou None se o nome não seguir o
               padrão .mvol
@@ -232,8 +259,8 @@ def _read_mvol_identity(fpth_file: pathlib.Path) -> CVolumeCandidate | None:
                             alcance=l_mvol.product.range_km,
                             # epoch do instante UTC do nome do arquivo
                             timestamp=int(l_mvol.timestamp.timestamp()),
-                            fullpath=str(fpth_file.resolve()),
-                            filesize=fpth_file.stat().st_size)
+                            fullpath=fs_fullpath,
+                            filesize=fi_filesize)
 
 # -------------------------------------------------------------------------------------
 def _decide_action(frow, fs_fullpath: str, fi_filesize: int) -> str:
@@ -301,9 +328,23 @@ def _collect_candidates(fs_dbase_path: str, flst_files: list, fdct_count: dict) 
 
     # transação de leitura (WAL: não bloqueia escritores)
     with vd.transaction(fs_dbase_path) as ldb:
+        # caminho rápido: fullpath -> tamanho dos registrados presentes, numa
+        # consulta só.  Mesmo caminho e mesmo tamanho é o SKIP de
+        # _decide_action, decidido sem decodificar o nome e sem consultar o
+        # banco por arquivo -- é o caso de quase todo arquivo a cada execução
+        ldct_present = ldb.present_files()
+
         for lpth_file in flst_files:
             try:
-                lcandidate = _read_mvol_identity(lpth_file)
+                ls_fullpath = _canonical_path(lpth_file)
+                li_filesize = lpth_file.stat().st_size
+
+                if ldct_present.get(ls_fullpath) == li_filesize:
+                    fdct_count["skipped"] += 1
+                    # next
+                    continue
+
+                lcandidate = _read_mvol_identity(lpth_file, ls_fullpath, li_filesize)
 
             # erro inesperado num arquivo específico (ex.: sumiu no meio da
             # varredura): loga e segue.  o banco não é acessado dentro deste

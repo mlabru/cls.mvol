@@ -92,7 +92,7 @@ def _list_remote(ftmp, fs_stdout: str, fs_stderr: str, fi_rc: int):
     for ls_dir in ("logs", "data/temp"):
         (lpth_vol / ls_dir).mkdir(parents=True)
 
-    ldct_env = {k: v for k, v in os.environ.items() if k != "MET_ENV"}
+    ldct_env = {k: v for k, v in os.environ.items() if k != "CLS_ENV"}
     ldct_env.update(PATH=f"{lpth_bin}:{os.environ['PATH']}", VOL_PATH=str(lpth_vol),
                     VOL_SYNC_DIR=str(ftmp / "sync"))
 

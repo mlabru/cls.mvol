@@ -11,15 +11,25 @@
 # - apps/volScan.py: varre VOL_SYNC_DIR e registra/atualiza cada .mvol na
 #   tabela volumes do catalog.db compartilhado (incremental, timestamps
 #   UTC);
-# - apps/volPurge.py (se VOL_RETAIN_DAYS não for vazio): retenção -- apaga
-#   os .mvol antigos que já têm produto final (ver vol_cfg.sh). 
-#   Um volume sendo convertido está PROCESSING, portanto pendente na view
-#   cappi_pending, e não é apagado (salvo VOL_RETAIN_MAX_DAYS).
+# - apps/volPurge.py (se VOL_RETAIN_DAYS ou VOL_RETAIN_MIN_FREE_GB não for
+#   vazio): retenção -- apaga os .mvol antigos que já têm produto final, e
+#   a guarda de disco apaga os mais antigos quando o espaço livre cai abaixo
+#   do mínimo (ver vol_cfg.sh).  Um volume sendo convertido está PROCESSING,
+#   portanto pendente na view cappi_pending, e não é apagado (salvo
+#   VOL_RETAIN_MAX_DAYS; a guarda de disco nunca apaga um PROCESSING).
 #
 # lock de instância próprio (.vol_register_instance.lock), independente do
 # de vol_sync.sh e do nwc_convert.sh: um sync ou uma conversão lentos não
 # bloqueiam o registro do que já chegou (o rsync só renomeia para *.mvol
 # arquivos completos).
+#
+# 2026.nov  mlabru  guarda de disco: volPurge.py também roda só com
+#                   VOL_RETAIN_MIN_FREE_GB (--min-free-gb), sem VOL_RETAIN_DAYS
+#
+# 2026.nov  mlabru  - falha do volPurge.py sai com o rc dele (antes só [warn] e
+#                     rc 0); o registro feito antes continua valendo
+#                   - heartbeat VOL_REGISTER_OK_FILE no fim de toda execução
+#                     bem sucedida, para o vol_check.sh
 #
 # 2026.out  mlabru  - normalização com 27.nowcast/25.oflow: acquire_instance_lock
 #                     (mesmo nome do vol_sync.sh), VOL_REGISTER_NO_MAIN e nível
@@ -82,17 +92,28 @@ run_scan() {
 
 # -------------------------------------------------------------------------------------
 # aplica a retenção dos .mvol (volPurge.py).  só é chamada com
-# VOL_RETAIN_DAYS preenchido; VOL_RETAIN_MAX_DAYS é opcional
+# VOL_RETAIN_DAYS e/ou VOL_RETAIN_MIN_FREE_GB preenchidos; VOL_RETAIN_MAX_DAYS
+# é opcional (só com VOL_RETAIN_DAYS)
 #
 # retorno: o código de saída do volPurge.py (0 = sucesso)
 #
 run_purge() {
 
-    local larr_purge_args=(--sync-dir "${VOL_SYNC_DIR}" --retain-days "${VOL_RETAIN_DAYS}")
+    local larr_purge_args=(--sync-dir "${VOL_SYNC_DIR}")
     local li_rc=0
 
-    if [ -n "${VOL_RETAIN_MAX_DAYS}" ]; then
-        larr_purge_args+=(--max-days "${VOL_RETAIN_MAX_DAYS}")
+    # retenção por idade (VOL_RETAIN_MAX_DAYS só com ela)
+    if [ -n "${VOL_RETAIN_DAYS}" ]; then
+        larr_purge_args+=(--retain-days "${VOL_RETAIN_DAYS}")
+
+        if [ -n "${VOL_RETAIN_MAX_DAYS}" ]; then
+            larr_purge_args+=(--max-days "${VOL_RETAIN_MAX_DAYS}")
+        fi
+    fi
+
+    # guarda de disco
+    if [ -n "${VOL_RETAIN_MIN_FREE_GB}" ]; then
+        larr_purge_args+=(--min-free-gb "${VOL_RETAIN_MIN_FREE_GB}")
     fi
 
     python3 "${LIB_DIR}/apps/volPurge.py" "${VOL_DBASE_FILE}" "${larr_purge_args[@]}" \
@@ -125,7 +146,8 @@ acquire_instance_lock() {
 #   1. diretórios, lock de instância e rotação dos logs dos filhos;
 #   2. registro (volScan.py) -- falha aqui encerra com o mesmo rc, sem
 #      retenção;
-#   3. retenção (volPurge.py), se ligada -- falha aqui só avisa.
+#   3. retenção (volPurge.py), se ligada -- falha sai com o rc dele;
+#   4. heartbeat de sucesso (VOL_REGISTER_OK_FILE).
 #
 main() {
 
@@ -137,7 +159,7 @@ main() {
 
     # logger
     log "-----------------------------------------------------------------"
-    log "[info]: iniciando registro (retenção: ${VOL_RETAIN_DAYS:-desligada} d)..."
+    log "[info]: iniciando registro (retenção: ${VOL_RETAIN_DAYS:-desligada} d, mínimo livre: ${VOL_RETAIN_MIN_FREE_GB:-desligado} GB)..."
 
     acquire_instance_lock
 
@@ -146,7 +168,7 @@ main() {
                    "${VOL_LOG_PURGE_APP}" "${VOL_LOG_PURGE_ERR}"
 
     # módulos precisam estar em PYTHONPATH pois apps/ não é um package
-    export PYTHONPATH="${LIB_DIR}/apps"
+    export PYTHONPATH="${LIB_DIR}/apps${PYTHONPATH:+:${PYTHONPATH}}"
 
     # 2. registro
     run_scan || li_rc=$?
@@ -158,15 +180,22 @@ main() {
         exit "${li_rc}"
     fi
 
-    # 3. retenção (desligada com VOL_RETAIN_DAYS vazio)
-    if [ -n "${VOL_RETAIN_DAYS}" ]; then
+    # 3. retenção por idade e/ou guarda de disco (desligadas com
+    #    VOL_RETAIN_DAYS e VOL_RETAIN_MIN_FREE_GB vazias)
+    if [ -n "${VOL_RETAIN_DAYS}" ] || [ -n "${VOL_RETAIN_MIN_FREE_GB}" ]; then
         run_purge || li_rc=$?
 
         if [ "${li_rc}" -ne 0 ]; then
-            # logger
-            log "[warn]: volPurge.py terminou com rc=${li_rc}; veja ${VOL_LOG_PURGE_ERR}"
+            # o registro já foi feito; o rc != 0 é para o cron/monitor ver
+            # que a retenção falhou (antes só [warn] e rc 0)
+            log "[error]: volPurge.py terminou com rc=${li_rc}; veja ${VOL_LOG_PURGE_ERR}"
+            # quit fail
+            exit "${li_rc}"
         fi
     fi
+
+    # 4. último sucesso, para o vol_check.sh
+    cls_heartbeat "${VOL_REGISTER_OK_FILE}"
 
     # logger
     log "[info]: registro concluído."

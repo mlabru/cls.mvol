@@ -4,17 +4,38 @@
 # vol_cfg.sh
 # variáveis de configuração compartilhadas
 #
+# 2026.nov  mlabru  VOL_RETAIN_MIN_FREE_GB (guarda de disco do volPurge.py)
+#
+# 2026.nov  mlabru  heartbeats VOL_SYNC_OK_FILE/VOL_REGISTER_OK_FILE e o limite
+#                   VOL_CHECK_MAX_AGE_MIN (vol_check.sh)
+#
+# 2026.nov  mlabru  cls_setup_pythonpath: pacote Python comum (cls_common)
+#                   por CLS_PYLIB, no lugar dos symlinks apps/{dbase,radar,util}
+#
+# 2026.nov  mlabru  CLS_LIB obrigatória (passo 2): sai o symlink cls_common.sh
+#                   da raiz do repo; sem cls.env/CLS_LIB, erro explícito
+#
+# 2026.nov  mlabru  - banco/CAPPIs compartilhados: sem sobreposição própria,
+#                     vêm de CLS_DBASE_FILE/CLS_CAPPI_DIR (cls.env, sob
+#                     CLS_ROOT) antes do padrão antigo
+#
+# 2026.nov  mlabru  - cls.env (CLS_ENV_FILE, padrão ~/.config/cls/cls.env)
+#                     carregado antes dos padrões; cls_common.sh vem de
+#                     CLS_LIB, com o symlink ao lado do script como reserva
+#                   - prefixo met -> cls (cls_log, cls_check_test_env,
+#                     CLS_ENV, CLS_TST_ROOT)
+#
 # 2026.out  mlabru  - comentários (refatoração para legibilidade; valores
 #                     inalterados)
-#                   - trava via met_check_test_env (cls_common.sh): resolve os
+#                   - trava via cls_check_test_env (cls_common.sh): resolve os
 #                     caminhos com realpath -m -- antes um caminho com ".."
 #                     (<raiz>/../producao) passava pelo padrão "<raiz>"/*
-#                   - ambiente de teste (tst_env/, 03.dat/tst): VOL_SYNC_DIR,
+#                   - ambiente de teste (cls.test, 03.dat/tst): VOL_SYNC_DIR,
 #                     VOL_PATH e VOL_DBASE_FILE aceitam override pelo
 #                     ambiente; servidor remoto (VOL_REMOTE_*) veio do
 #                     vol_sync.sh para cá, também sobrescrevível
-#                   - trava MET_ENV=test: recusa servidor que não seja
-#                     localhost e caminho fora de MET_TST_ROOT -- o sync usa
+#                   - trava CLS_ENV=test: recusa servidor que não seja
+#                     localhost e caminho fora de CLS_TST_ROOT -- o sync usa
 #                     --remove-source-files, e um teste apontado para o
 #                     servidor real apagaria os .mvol do radar
 #
@@ -49,8 +70,15 @@
 
 # < configuração compartilhada >-------------------------------------------------------
 
+# ambiente da instalação (cls.env: CLS_LIB e sobreposições), carregado
+# antes dos padrões abaixo; "set -a" exporta para os programas Python.
+# Precedência: ambiente do processo > cls.env > padrões deste arquivo (ver
+# cls.common/etc/cls.env.example)
+CLS_ENV_FILE="${CLS_ENV_FILE:-${HOME:-}/.config/cls/cls.env}"
+if [ -r "${CLS_ENV_FILE}" ]; then set -a; source "${CLS_ENV_FILE}"; set +a; fi
+
 # cada VOL_X="${VOL_X:-padrão}" abaixo usa o valor do ambiente, se houver
-# (ambiente de teste, tst_env/), senão o padrão de produção
+# (ambiente de teste, cls.test), senão o padrão de produção
 
 # destino local do rsync (vol_sync.sh), diretório varrido por volScan.py e
 # podado por volPurge.py (vol_register.sh)
@@ -69,11 +97,20 @@ VOL_STATE="${VOL_DATA}/state"
 # arquivos temporários
 VOL_TEMP="${VOL_DATA}/temp"
 
+# heartbeats: último sucesso de cada cron (cls_heartbeat), conferidos pelo
+# vol_check.sh (monitoramento).  Um cron parado ou que só falha deixa o
+# heartbeat envelhecer além de VOL_CHECK_MAX_AGE_MIN (padrão: 3 execuções
+# perdidas do */10 do crontab)
+VOL_SYNC_OK_FILE="${VOL_STATE}/vol_sync.ok"
+VOL_REGISTER_OK_FILE="${VOL_STATE}/vol_register.ok"
+VOL_CHECK_MAX_AGE_MIN="${VOL_CHECK_MAX_AGE_MIN:-30}"
+
 # catalog.db compartilhado, onde vol_sync.sh (volDBWriter.py) grava as
 # observações de todo arquivo listado (fullpath, tempo do nome e mtime),
 # para que se reconstrua a recepção mesmo depois que o .mvol de origem for
 # removido
-VOL_DBASE_FILE="${VOL_DBASE_FILE:-${VOL_DATA}/dbase/catalog.db}"
+# ordem: VOL_DBASE_FILE > CLS_DBASE_FILE (cls.env, raiz CLS_ROOT) > padrão
+VOL_DBASE_FILE="${VOL_DBASE_FILE:-${CLS_DBASE_FILE:-${VOL_DATA}/dbase/catalog.db}}"
 
 # servidor dos .mvol (vol_sync.sh): listado por ssh e baixado por rsync com
 # --remove-source-files -- a origem é APAGADA depois da cópia
@@ -93,15 +130,35 @@ GI_LOG_MAX_SIZE=$((10 * 1024 * 1024))
 VOL_RETAIN_DAYS="${VOL_RETAIN_DAYS:-}"
 VOL_RETAIN_MAX_DAYS="${VOL_RETAIN_MAX_DAYS:-}"
 
+# guarda de disco (volPurge.py --min-free-gb): com menos de
+# VOL_RETAIN_MIN_FREE_GB GB livres no sistema de arquivos de VOL_SYNC_DIR,
+# apaga os .mvol mais antigos (já convertidos antes; pendentes só em último
+# caso; nunca PROCESSING) até voltar ao mínimo -- disco cheio faria o rsync
+# falhar e perder os dados novos.  Independe de VOL_RETAIN_DAYS; vazio =
+# desligada
+VOL_RETAIN_MIN_FREE_GB="${VOL_RETAIN_MIN_FREE_GB:-}"
+
 # < trava do ambiente de teste >-------------------------------------------------------
 
-# met_check_test_env (cls_common.sh, symlink para 04.dvl/bash, comum aos
-# projetos met)
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cls_common.sh"
+# cls_check_test_env (cls_common.sh, de CLS_LIB, do cls.env;
+# comum aos projetos cls)
+# CLS_LIB (cls.env) é obrigatória: sem ela não há cls_common.sh -- falha
+# aqui, com a causa, em vez de num "command not found" mais adiante
+if [ ! -r "${CLS_LIB:-}/cls_common.sh" ]; then
+    echo "[error]: CLS_LIB='${CLS_LIB:-}' sem cls_common.sh; defina-a no cls.env (${CLS_ENV_FILE:-~/.config/cls/cls.env})" >&2
+    exit 1
+fi
+source "${CLS_LIB}/cls_common.sh"
 
-# com MET_ENV=test (tst_env/env.sh), nada pode apontar para fora de
-# MET_TST_ROOT nem para um servidor que não seja esta máquina
-met_check_test_env -r "${VOL_REMOTE_IP}" "${VOL_SYNC_DIR}" "${VOL_PATH}" \
+# com CLS_ENV=test (env.sh do cls.test), nada pode apontar para fora de
+# CLS_TST_ROOT nem para um servidor que não seja esta máquina
+cls_check_test_env -r "${VOL_REMOTE_IP}" "${VOL_SYNC_DIR}" "${VOL_PATH}" \
                       "${VOL_DBASE_FILE}" "${VOL_REMOTE_DIR}" || exit 1
+
+# < pacote Python comum >--------------------------------------------------------------
+
+# cls_common (dbase, radar, util; CLS_PYLIB no cls.env) no PYTHONPATH,
+# exportado para todo programa Python chamado daqui (cls_common.sh)
+cls_setup_pythonpath || exit 1
 
 # < the end >--------------------------------------------------------------------------

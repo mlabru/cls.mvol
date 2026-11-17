@@ -10,6 +10,8 @@ catalog.db compartilhado, gravada por volDBWriter.py.
 abre o banco somente para leitura (mode=ro), para nunca criar o arquivo nem
 disputar lock de escrita com vol_sync.sh / monrad.
 
+2026.nov  mlabru  imports cls_common.* (pacote do repo cls.common, via
+                  CLS_PYLIB; antes symlinks de diretório)
 2026.out  mlabru  refatoração para legibilidade: list_observations()
                   dividido em _build_where_clause, _select_time_column,
                   _count_rows, _select_rows e _print_rows
@@ -30,7 +32,7 @@ import sqlite3
 import sys
 
 # locals
-import dbase.vol_catalog as ct
+import cls_common.dbase.vol_catalog as ct
 
 # < constants >────────────────────────────────────────────────────────────────────────
 

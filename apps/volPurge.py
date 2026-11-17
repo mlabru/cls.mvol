@@ -29,10 +29,25 @@ conversor nunca apaga nem move).
 
 - sintéticos (status 4/5) e volumes não registrados não são tocados
 
-uso:
-    python volPurge.py <catalog.db> --sync-dir <dir> --retain-days N
-                       [--max-days M] [--dry-run]
+- guarda de disco (--min-free-gb G): depois da retenção por idade, se o
+  sistema de arquivos do --sync-dir tiver menos de G GB livres, apaga os
+  .mvol mais antigos até voltar a G -- primeiro os já convertidos, depois
+  os pendentes (último recurso, com aviso), nunca um PROCESSING (o
+  conversor está lendo).  Disco cheio faria o rsync falhar e perder os
+  dados NOVOS, os que mais importam ao nowcast.  Se nem assim chegar a G:
+  [error] e rc 1
 
+uso:
+    python volPurge.py <catalog.db> --sync-dir <dir>
+                       [--retain-days N [--max-days M]] [--min-free-gb G]
+                       [--dry-run]
+    (pelo menos um de --retain-days e --min-free-gb)
+
+2026.nov  mlabru  guarda de disco (--min-free-gb): apaga os mais antigos quando o
+                  espaço livre do --sync-dir cai abaixo do mínimo; --retain-days
+                  passa a ser opcional (um dos dois é obrigatório)
+2026.nov  mlabru  imports cls_common.* (pacote do repo cls.common, via
+                  CLS_PYLIB; antes symlinks de diretório)
 2026.nov  mlabru  arquivo ausente cujo diretório também sumiu não vira
                   has_mvol=0 (montagem parcial; contador "sem diretório")
 2026.out  mlabru  refatoração para legibilidade: purge() dividido em
@@ -48,17 +63,21 @@ import argparse
 import collections
 import logging
 import pathlib
+import shutil
 import sqlite3
 import sys
 import time
 
 # locals
-import dbase.vol_dbase as vd
+import cls_common.dbase.vol_dbase as vd
 
 # < constants >────────────────────────────────────────────────────────────────────────
 
 # segundos por dia
 MI_DAY_S = 86400
+
+# bytes por GB (GiB, como o df -h)
+MI_GB = 1024 ** 3
 
 # contadores do resumo
 CS_REMOVED = "removidos"
@@ -67,9 +86,12 @@ CS_FORCED = "forçados"
 CS_OUTSIDE = "fora do sync-dir"
 CS_NO_DIR = "sem diretório"
 CS_ERROR = "erros"
+CS_DISK = "pelo disco"
+CS_DISK_SHORT = "disco insuficiente"
 
 # ordem dos contadores na linha de resumo do log
-MT_SUMMARY_ORDER = (CS_REMOVED, CS_MISSING, CS_FORCED, CS_OUTSIDE, CS_NO_DIR, CS_ERROR)
+MT_SUMMARY_ORDER = (CS_REMOVED, CS_MISSING, CS_FORCED, CS_DISK, CS_OUTSIDE, CS_NO_DIR,
+                    CS_ERROR, CS_DISK_SHORT)
 
 # < logging >──────────────────────────────────────────────────────────────────────────
 
@@ -97,21 +119,35 @@ def arg_parse(flst_argv: list | None = None):
     lparser.add_argument("dbase", type=str, help="caminho do catalog.db compartilhado.")
     lparser.add_argument("--sync-dir", required=True, type=pathlib.Path,
                          help="raiz dos .mvol sincronizados; nada fora dela é apagado.")
-    lparser.add_argument("--retain-days", required=True, type=float,
+    lparser.add_argument("--retain-days", type=float, default=None,
                          help="idade mínima (dias, pelo horário do volume) para apagar.")
     lparser.add_argument("--max-days", type=float, default=None,
                          help="idade a partir da qual um pendente também é apagado "
                               "(default: nunca).")
+    lparser.add_argument("--min-free-gb", type=float, default=None,
+                         help="espaço livre mínimo (GB) no sistema de arquivos do "
+                              "sync-dir; abaixo dele apaga os mais antigos (default: "
+                              "sem guarda de disco).")
     lparser.add_argument("--dry-run", action="store_true",
                          help="só lista o que seria apagado.")
 
     largs = lparser.parse_args(flst_argv)
 
-    if largs.retain_days <= 0:
+    if largs.retain_days is None and largs.min_free_gb is None:
+        lparser.error("informe --retain-days, --min-free-gb ou os dois")
+
+    if largs.retain_days is not None and largs.retain_days <= 0:
         lparser.error("--retain-days precisa ser > 0")
 
-    if largs.max_days is not None and largs.max_days < largs.retain_days:
-        lparser.error("--max-days precisa ser >= --retain-days")
+    if largs.max_days is not None:
+        if largs.retain_days is None:
+            lparser.error("--max-days exige --retain-days")
+
+        if largs.max_days < largs.retain_days:
+            lparser.error("--max-days precisa ser >= --retain-days")
+
+    if largs.min_free_gb is not None and largs.min_free_gb <= 0:
+        lparser.error("--min-free-gb precisa ser > 0")
 
     # ok
     return largs
@@ -188,7 +224,7 @@ def _compute_cutoffs(fi_now: int, ff_retain_days: float,
 
 # ─────────────────────────────────────────────────────────────────────────────────────
 def _purge_one_file(fdct_candidate: dict, fpth_sync_dir: pathlib.Path, fb_dry_run: bool,
-                    fctr_summary: collections.Counter) -> bool:
+                    fctr_summary: collections.Counter, fs_counter: str = CS_REMOVED) -> bool:
     """
     aplica a retenção a um candidato (apaga o .mvol, ou só simula)
 
@@ -196,6 +232,8 @@ def _purge_one_file(fdct_candidate: dict, fpth_sync_dir: pathlib.Path, fb_dry_ru
     :param fpth_sync_dir: raiz permitida
     :param fb_dry_run: True = só loga o que seria apagado
     :param fctr_summary: contadores CS_*, atualizados aqui
+    :param fs_counter: contador de um .mvol apagado (CS_REMOVED pela idade,
+                       CS_DISK pela guarda de disco)
 
     :returns: True se o volume deve ser marcado has_mvol=0 no banco (o
               arquivo foi apagado, seria apagado, ou já não existia)
@@ -210,10 +248,12 @@ def _purge_one_file(fdct_candidate: dict, fpth_sync_dir: pathlib.Path, fb_dry_ru
         # não marca
         return False
 
-    # pendente só chega aqui depois de --max-days: apaga, mas avisa
+    # pendente só chega aqui depois de --max-days, ou pela guarda de disco:
+    # apaga, mas avisa
     if fdct_candidate["pending"]:
         # logger
-        M_LOG.warning("%s ainda pendente, apagado pelo limite de disco", lpth_file.name)
+        M_LOG.warning("%s ainda pendente, apagado pelo limite de %s", lpth_file.name,
+                      "espaço livre" if CS_DISK == fs_counter else "idade (--max-days)")
         fctr_summary[CS_FORCED] += 1
 
     # arquivo já não existe: só corrige o banco -- se o diretório dele
@@ -235,7 +275,7 @@ def _purge_one_file(fdct_candidate: dict, fpth_sync_dir: pathlib.Path, fb_dry_ru
     if fb_dry_run:
         # logger
         M_LOG.info("apagaria %s", lpth_file)
-        fctr_summary[CS_REMOVED] += 1
+        fctr_summary[fs_counter] += 1
         # "marca" (dry-run não grava no banco, ver purge)
         return True
 
@@ -250,7 +290,7 @@ def _purge_one_file(fdct_candidate: dict, fpth_sync_dir: pathlib.Path, fb_dry_ru
         # arquivo continua lá: não marca
         return False
 
-    fctr_summary[CS_REMOVED] += 1
+    fctr_summary[fs_counter] += 1
 
     # marca
     return True
@@ -290,43 +330,22 @@ def _log_summary(fctr_summary: collections.Counter, fb_dry_run: bool) -> None:
     M_LOG.info("%s%s", ls_prefix, "  ".join(llst_parts))
 
 # ─────────────────────────────────────────────────────────────────────────────────────
-def purge(fs_dbase_path: str, fpth_sync_dir: pathlib.Path, ff_retain_days: float,
-          ff_max_days: float | None = None, fb_dry_run: bool = False,
-          fi_now: int | None = None) -> collections.Counter:
+def _volume_key(fdct_candidate: dict) -> tuple:
     """
-    aplica a retenção.  fluxo:
-
-    1. confere o sync-dir (_check_sync_dir);
-    2. calcula os cortes de idade (_compute_cutoffs);
-    3. lê os candidatos do banco (vol_dbase.purge_candidates);
-    4. apaga cada .mvol (_purge_one_file) -- arquivo primeiro...
-    5. ...banco depois (_mark_removed_in_dbase): se a gravação falhar, a
-       próxima execução acha o arquivo ausente e corrige has_mvol.
-
-    :param fs_dbase_path: caminho do catalog.db
-    :param fpth_sync_dir: raiz dos .mvol; nada fora dela é apagado
-    :param ff_retain_days: idade mínima (dias) para apagar
-    :param ff_max_days: idade (dias) a partir da qual um pendente também é
-                        apagado (None = nunca)
-    :param fb_dry_run: True = só lista, não apaga nem grava
-    :param fi_now: instante de referência (epoch UTC); None = agora (testes)
-
-    :raises RuntimeError: --sync-dir inexistente ou vazio
-    :raises sqlite3.Error: falha de banco
-
-    :returns: contadores (CS_*)
+    chave única do volume: (radar, alcance, timestamp)
     """
-    # logger
-    M_LOG.debug(">> purge")
+    return fdct_candidate["radar"], fdct_candidate["alcance"], fdct_candidate["timestamp"]
 
-    _check_sync_dir(fpth_sync_dir)
+# ─────────────────────────────────────────────────────────────────────────────────────
+def _retain_by_age(fs_dbase_path: str, fpth_sync_dir: pathlib.Path, fi_now: int,
+                   ff_retain_days: float, ff_max_days: float | None, fb_dry_run: bool,
+                   fctr_summary: collections.Counter) -> list:
+    """
+    retenção por idade: apaga os .mvol de purge_candidates()
 
-    li_now = fi_now
-
-    if li_now is None:
-        li_now = int(time.time())
-
-    li_retain_cutoff, li_forced_cutoff = _compute_cutoffs(li_now, ff_retain_days, ff_max_days)
+    :returns: chaves dos volumes a marcar has_mvol=0
+    """
+    li_retain_cutoff, li_forced_cutoff = _compute_cutoffs(fi_now, ff_retain_days, ff_max_days)
 
     with vd.transaction(fs_dbase_path) as ldb:
         llst_candidates = ldb.purge_candidates(li_retain_cutoff, li_forced_cutoff)
@@ -340,17 +359,153 @@ def purge(fs_dbase_path: str, fpth_sync_dir: pathlib.Path, ff_retain_days: float
     M_LOG.info("candidatos: %d (retenção %g d, limite %s)", len(llst_candidates),
                ff_retain_days, ls_max_days_label)
 
+    llst_volume_keys = []
+
+    for ldct_candidate in llst_candidates:
+        if _purge_one_file(ldct_candidate, fpth_sync_dir, fb_dry_run, fctr_summary):
+            llst_volume_keys.append(_volume_key(ldct_candidate))
+
+    # ok
+    return llst_volume_keys
+
+# ─────────────────────────────────────────────────────────────────────────────────────
+def _free_bytes(fpth_dir: pathlib.Path) -> int:
+    """
+    bytes livres no sistema de arquivos de fpth_dir (para um usuário comum,
+    como o df)
+    """
+    return shutil.disk_usage(fpth_dir).free
+
+# ─────────────────────────────────────────────────────────────────────────────────────
+def _disk_guard(fs_dbase_path: str, fpth_sync_dir: pathlib.Path, fi_min_free: int,
+                fb_dry_run: bool, fctr_summary: collections.Counter, fn_free_bytes,
+                fset_done: set) -> list:
+    """
+    guarda de disco: com menos de fi_min_free bytes livres, apaga os .mvol na
+    ordem de vol_dbase.disk_candidates() (não pendentes antes, mais antigos
+    antes, nunca PROCESSING) até voltar ao mínimo.  O espaço é medido de novo
+    depois de cada remoção (no dry-run, estimado pelo tamanho do arquivo).
+    Se acabarem os candidatos antes: [error] e contador CS_DISK_SHORT
+
+    :param fset_done: chaves já apagadas pela retenção por idade nesta execução
+
+    :returns: chaves dos volumes a marcar has_mvol=0
+    """
+    li_free = fn_free_bytes(fpth_sync_dir)
+
+    if li_free >= fi_min_free:
+        # ok
+        return []
+
+    # logger
+    M_LOG.warning("espaço livre %.2f GB < mínimo %.2f GB em %s: apagando os .mvol mais antigos",
+                  li_free / MI_GB, fi_min_free / MI_GB, fpth_sync_dir)
+
+    with vd.transaction(fs_dbase_path) as ldb:
+        llst_candidates = ldb.disk_candidates()
+
+    llst_volume_keys = []
+
+    for ldct_candidate in llst_candidates:
+        if li_free >= fi_min_free:
+            break
+
+        lt_key = _volume_key(ldct_candidate)
+
+        if lt_key in fset_done:
+            # next
+            continue
+
+        try:
+            li_size = pathlib.Path(ldct_candidate["fullpath"]).stat().st_size
+
+        # ausente: _purge_one_file só corrige o banco
+        except OSError:
+            li_size = 0
+
+        if not _purge_one_file(ldct_candidate, fpth_sync_dir, fb_dry_run, fctr_summary, CS_DISK):
+            # next
+            continue
+
+        llst_volume_keys.append(lt_key)
+
+        if fb_dry_run:
+            li_free += li_size
+
+        else:
+            li_free = fn_free_bytes(fpth_sync_dir)
+
+    if li_free < fi_min_free:
+        # logger
+        M_LOG.error("espaço livre ainda %.2f GB < mínimo %.2f GB em %s: nada mais a apagar "
+                    "(PROCESSING e arquivos fora do registro não são tocados)",
+                    li_free / MI_GB, fi_min_free / MI_GB, fpth_sync_dir)
+        fctr_summary[CS_DISK_SHORT] += 1
+
+    # ok
+    return llst_volume_keys
+
+# ─────────────────────────────────────────────────────────────────────────────────────
+def purge(fs_dbase_path: str, fpth_sync_dir: pathlib.Path, ff_retain_days: float | None,
+          ff_max_days: float | None = None, fb_dry_run: bool = False,
+          fi_now: int | None = None, ff_min_free_gb: float | None = None,
+          fn_free_bytes=None) -> collections.Counter:
+    """
+    aplica a retenção.  fluxo:
+
+    1. confere o sync-dir (_check_sync_dir);
+    2. retenção por idade, se ff_retain_days (_retain_by_age): candidatos do
+       banco (vol_dbase.purge_candidates), cada .mvol apagado
+       (_purge_one_file) -- arquivo primeiro...
+    3. guarda de disco, se ff_min_free_gb (_disk_guard): mais antigos até o
+       espaço livre voltar ao mínimo;
+    4. ...banco depois (_mark_removed_in_dbase): se a gravação falhar, a
+       próxima execução acha o arquivo ausente e corrige has_mvol.
+
+    :param fs_dbase_path: caminho do catalog.db
+    :param fpth_sync_dir: raiz dos .mvol; nada fora dela é apagado
+    :param ff_retain_days: idade mínima (dias) para apagar (None = sem
+                           retenção por idade)
+    :param ff_max_days: idade (dias) a partir da qual um pendente também é
+                        apagado (None = nunca)
+    :param fb_dry_run: True = só lista, não apaga nem grava
+    :param fi_now: instante de referência (epoch UTC); None = agora (testes)
+    :param ff_min_free_gb: espaço livre mínimo (GB) no sistema de arquivos do
+                           sync-dir (None = sem guarda de disco)
+    :param fn_free_bytes: função(pathlib.Path) -> bytes livres; None = o do
+                          sistema de arquivos (testes injetam outra)
+
+    :raises RuntimeError: --sync-dir inexistente ou vazio
+    :raises sqlite3.Error: falha de banco
+
+    :returns: contadores (CS_*)
+    """
+    # logger
+    M_LOG.debug(">> purge")
+
+    _check_sync_dir(fpth_sync_dir)
+
     lctr_summary = collections.Counter()
 
     # volumes cujo has_mvol vai a 0: (radar, alcance, timestamp)
     llst_volume_keys = []
 
-    for ldct_candidate in llst_candidates:
-        lb_mark = _purge_one_file(ldct_candidate, fpth_sync_dir, fb_dry_run, lctr_summary)
+    if ff_retain_days is not None:
+        li_now = fi_now
 
-        if lb_mark:
-            llst_volume_keys.append((ldct_candidate["radar"], ldct_candidate["alcance"],
-                                     ldct_candidate["timestamp"]))
+        if li_now is None:
+            li_now = int(time.time())
+
+        llst_volume_keys += _retain_by_age(fs_dbase_path, fpth_sync_dir, li_now, ff_retain_days,
+                                           ff_max_days, fb_dry_run, lctr_summary)
+
+    if ff_min_free_gb is not None:
+        if fn_free_bytes is None:
+            fn_free_bytes = _free_bytes
+
+        llst_volume_keys += _disk_guard(fs_dbase_path, fpth_sync_dir,
+                                        int(ff_min_free_gb * MI_GB), fb_dry_run, lctr_summary,
+                                        fn_free_bytes, set(llst_volume_keys))
 
     # dry-run nunca grava no banco
     if not fb_dry_run:
@@ -366,8 +521,8 @@ def main(flst_argv: list | None = None) -> int:
     """
     drive app
 
-    :returns: 0 em sucesso, 1 em erro (banco, sync-dir, ou algum .mvol que não
-              pôde ser apagado)
+    :returns: 0 em sucesso, 1 em erro (banco, sync-dir, algum .mvol que não
+              pôde ser apagado, ou espaço livre ainda abaixo de --min-free-gb)
     """
     # logger
     M_LOG.debug(">> main")
@@ -377,7 +532,7 @@ def main(flst_argv: list | None = None) -> int:
 
     try:
         lctr = purge(largs.dbase, largs.sync_dir, largs.retain_days, largs.max_days,
-                     largs.dry_run)
+                     largs.dry_run, ff_min_free_gb=largs.min_free_gb)
 
     # em caso de erro,...
     except (sqlite3.Error, RuntimeError) as lerr:
@@ -386,8 +541,8 @@ def main(flst_argv: list | None = None) -> int:
         # quit fail
         return 1
 
-    # algum .mvol não pôde ser apagado ?
-    if lctr[CS_ERROR]:
+    # algum .mvol não pôde ser apagado, ou o disco continua abaixo do mínimo ?
+    if lctr[CS_ERROR] or lctr[CS_DISK_SHORT]:
         # quit fail
         return 1
 

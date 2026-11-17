@@ -26,3 +26,7 @@ tst_env/
 
 # intermediários por execução (VOL_TEMP; ex: PNGs do volViewer em data/temp/viewer)
 data/temp/
+
+# links locais para os dados da raiz da instalação (CLS_ROOT); os scripts
+# não dependem deles (banco/CAPPIs vêm do cls.env)
+data/dbase
