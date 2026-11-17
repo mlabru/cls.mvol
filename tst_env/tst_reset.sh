@@ -11,6 +11,7 @@
 #
 # uso: tst_reset.sh [-r raiz] --yes
 #
+# 2026.nov  mlabru  recria o catalog.db migrado (cls_common.dbase.schema)
 # 2026.out  mlabru  initial version (Linux/Bash)
 
 set -euo pipefail
@@ -61,6 +62,9 @@ mkdir -p "${LS_REAL}"/{inbox,radar,feed} \
          "${LS_REAL}/mvol/data/dbase" "${LS_REAL}/mvol/logs" "${LS_REAL}/mrad" \
          "${LS_REAL}/nowcast/data/cappi" "${LS_REAL}/nowcast/logs" \
          "${LS_REAL}/oflow/logs" "${LS_REAL}/oflow/data"/{assets,output,state,temp}
+
+# catalog.db novo, já na versão de esquema do código (como no tst_setup.sh)
+PYTHONPATH="${CLS_PYLIB}" python3 -m cls_common.dbase.schema "${VOL_DBASE_FILE}"
 
 echo "ambiente zerado: ${LS_REAL}"
 

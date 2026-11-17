@@ -21,6 +21,9 @@ o schema vive só em vol_catalog.py (compartilhado por symlink).
 
 2026.nov  mlabru  imports cls_common.* (pacote do repo cls.common, via
                   CLS_PYLIB; antes symlinks de diretório)
+2026.nov  mlabru  confere a versão do esquema (cls_common.dbase.schema) em vez
+                  de criar/migrar a tabela (vol_catalog.ensure_schema saiu):
+                  banco não migrado = rc 1, e vol_sync.sh não baixa nada
 2026.nov  mlabru  log em UTC (era hora local, contra o contrato "tudo é
                   UTC"); loga quantas observações eram novas
 2026.out  mlabru  refatoração para legibilidade: parse_lines() usa
@@ -53,6 +56,7 @@ import time
 
 # locals
 import cls_common.radar.rd_mvol as mv
+import cls_common.dbase.schema as sc
 import cls_common.dbase.vol_catalog as ct
 
 # < constants >────────────────────────────────────────────────────────────────────────
@@ -198,7 +202,7 @@ def name_timestamp(fs_filepath: str) -> int | None:
 # ─────────────────────────────────────────────────────────────────────────────────────
 def write_observations(fs_dbase_path: str, flst_rows: list) -> int:
     """
-    abre o catalog.db compartilhado (WAL, garante/migra schema) e grava as
+    abre o catalog.db compartilhado (WAL, confere a versão do esquema) e grava as
     observações numa única transação:
 
     1. INSERT OR IGNORE: fullpath já gravado não é duplicado;
@@ -237,7 +241,8 @@ def write_observations(fs_dbase_path: str, flst_rows: list) -> int:
     try:
         lconn.execute("PRAGMA journal_mode = WAL")
 
-        ct.ensure_schema(lconn)
+        # esquema na versão do código ?  (migração é no deploy, não aqui)
+        sc.check_schema(lconn, fs_dbase_path)
 
         lcursor = lconn.executemany(
             f"INSERT OR IGNORE INTO {ct.CS_TABLE} (fullpath, mtime, timestamp, source, created_at) "

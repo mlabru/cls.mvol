@@ -6,6 +6,8 @@ Copyright (c) 1995-2026, Instituto de Controle do Espaço Aéreo
 conftest
 fixtures e stubs compartilhados pela suíte de testes unitários
 
+2026.nov  mlabru  fixture catalog_migrado (autouse): o banco dos testes nasce
+                  migrado (cls_common.dbase.schema), como em produção
 2026.nov  mlabru  stub do pyart (MagicMock) e backend/colormap do matplotlib
                   removidos: nenhum teste importa pyart nem matplotlib (as
                   views e rv_cappi.py saíram); o stub mascararia um import
@@ -22,6 +24,9 @@ fixtures e stubs compartilhados pela suíte de testes unitários
 import os
 import pathlib
 import sys
+
+# pytest
+import pytest
 
 # < path setup >-----------------------------------------------------------------------
 
@@ -57,5 +62,19 @@ if os.environ["CLS_PYLIB"] not in sys.path:
 if os.environ["CLS_PYLIB"] not in os.environ.get("PYTHONPATH", "").split(":"):
     os.environ["PYTHONPATH"] = ":".join(filter(None, (os.environ["CLS_PYLIB"],
                                                       os.environ.get("PYTHONPATH"))))
+
+# < catalog.db migrado >---------------------------------------------------------------
+
+@pytest.fixture(autouse=True)
+def catalog_migrado(tmp_path):
+    """
+    todo teste começa com <tmp_path>/catalog.db já na versão de esquema do
+    código, como um banco de produção depois do deploy (o deploy migra; os
+    programas só conferem).  Para um banco NÃO migrado, use outro nome
+    """
+    # locals (import tardio: o sys.path é montado acima)
+    import cls_common.dbase.schema as sc
+
+    sc.migrate(str(tmp_path / "catalog.db"))
 
 # < the end >--------------------------------------------------------------------------

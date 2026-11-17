@@ -25,6 +25,7 @@
 #
 # uso: tst_setup.sh [raiz]          (TST_SRC sobrescreve a origem dos .mvol)
 #
+# 2026.nov  mlabru  migra o catalog.db (cls_common.dbase.schema)
 # 2026.nov  mlabru  projetos em <nn>.<proj>/cls.<proj> (era <nn>.<proj>/04.dvl);
 #                   env.sh com CLS_ENV/CLS_TST_ROOT (eram MET_*), CLS_LIB e
 #                   CLS_ENV_FILE=/dev/null (não herda o cls.env da máquina);
@@ -164,6 +165,11 @@ EOF
 # do env.sh (NWC_DBASE_FILE, NWC_CAPPI_DIR) e os relativos que sobram
 # (log_dir) resolvem dentro de NWC_PATH
 cp "${TST_NWC_DIR}/config.ini" "${TST_ROOT}/nowcast/config.ini"
+
+# catalog.db na versão de esquema do código, como o deploy faz em produção
+# (os programas só conferem a versão; nenhum cria tabela)
+PYTHONPATH="${TST_CLS_DIR}/cls.common/python" \
+    python3 -m cls_common.dbase.schema "${TST_ROOT}/mvol/data/dbase/catalog.db"
 
 echo "ambiente pronto em ${TST_ROOT}"
 echo "origem: ${TST_SRC} ($(find "${TST_SRC}" -name '*.mvol' | wc -l) .mvol)"

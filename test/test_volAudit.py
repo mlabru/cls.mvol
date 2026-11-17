@@ -7,6 +7,7 @@ test_volAudit
 testes unitários de volAudit (cruzamento observações × volumes, somente
 leitura)
 
+2026.nov  mlabru  banco migrado pela fixture catalog_migrado (sem DDL aqui)
 2026.set  mlabru  fullpath das observações relativo a REMOTE_DIR
 2026.set  mlabru  volumes interpolados/previstos fora do cruzamento
 2026.set  mlabru  initial version (Linux/Python)
@@ -20,7 +21,6 @@ import sqlite3
 
 # model
 import cls_common.dbase.vol_catalog as ct
-import cls_common.dbase.vol_dbase as vd
 import volAudit as va
 
 # < constants >────────────────────────────────────────────────────────────────────────
@@ -51,11 +51,8 @@ def _setup(ftmp, flst_obs: list, flst_vol: list) -> str:
     """
     ls_db = str(ftmp / "catalog.db")
 
+    # o banco já vem migrado (fixture catalog_migrado, conftest.py)
     lconn = sqlite3.connect(ls_db)
-    ct.ensure_schema(lconn)
-
-    for ls_sql in vd.MT_CREATE_ALL:
-        lconn.execute(ls_sql)
 
     for li_idx, ls_name in enumerate(flst_obs):
         lconn.execute(f"INSERT INTO {ct.CS_TABLE} (fullpath, mtime, source) VALUES (?, ?, ?)",
