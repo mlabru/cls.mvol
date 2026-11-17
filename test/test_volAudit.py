@@ -7,6 +7,7 @@ test_volAudit
 testes unitários de volAudit (cruzamento observações × volumes, somente
 leitura)
 
+2026.nov  mlabru  categoria 4 (listado sem recepção) e reenvios
 2026.nov  mlabru  banco migrado pela fixture catalog_migrado (sem DDL aqui)
 2026.set  mlabru  fullpath das observações relativo a REMOTE_DIR
 2026.set  mlabru  volumes interpolados/previstos fora do cruzamento
@@ -161,5 +162,46 @@ def test_volumes_sinteticos_do_nowcast_sao_ignorados(tmp_path):
 
     assert [] == ldct["unlisted"]
     assert 2 == ldct["synthetic"]
+
+# < recepção (migração 2) >────────────────────────────────────────────────────────────
+
+def test_listado_sem_recepcao_e_reenvios(tmp_path):
+    ls_old, ls_new, ls_got = (_name("CGU", 250, MI_T0), _name("CGU", 250, MI_T1),
+                              _name("BEL", 400, MI_T0))
+    ls_db = _setup(tmp_path, [ls_old, ls_new, ls_got], [])
+
+    lconn = sqlite3.connect(ls_db)
+    # antigo e não recebido; novo (dentro da carência) e não recebido;
+    # recebido, mas reenviado 2 vezes
+    lconn.execute(f"UPDATE {ct.CS_TABLE} SET created_at = '2026-01-01T00:00:00+00:00'")
+    lconn.execute(f"UPDATE {ct.CS_TABLE} SET created_at = ? WHERE fullpath LIKE ?",
+                  ("2099-01-01T00:00:00+00:00", f"%{ls_new}"))
+    lconn.execute(f"UPDATE {ct.CS_TABLE} SET received_at = '2026-01-01T00:01:00+00:00', "
+                  f"resends = 2 WHERE fullpath LIKE ?", (f"%{ls_got}",))
+    lconn.commit()
+    lconn.close()
+
+    ldct = va.audit(ls_db)["reception"]
+
+    assert [f"Estacao/000/{ls_old}"] == [lt[1] for lt in ldct["not_received"]]
+    assert [(2, f"Estacao/000/{ls_got}")] == ldct["resends"]
+
+    # filtro de estação
+    assert [] == va.audit(ls_db, fs_station="cgu")["reception"]["resends"]
+
+def test_banco_sem_migracao_2_so_avisa(tmp_path, capsys):
+    ls_db = str(tmp_path / "v1.db")
+    lconn = sqlite3.connect(ls_db)
+    lconn.execute(f"CREATE TABLE {ct.CS_TABLE} (fullpath TEXT, mtime REAL)")
+    lconn.execute("CREATE TABLE volumes (radar TEXT, alcance INTEGER, timestamp INTEGER, "
+                  "fullpath TEXT, status INTEGER, interpolated INTEGER, predicted INTEGER)")
+    lconn.commit()
+    lconn.close()
+
+    ldct = va.audit(ls_db)
+    assert ldct["reception"] is None
+
+    va.print_report(ldct, fb_count=True)
+    assert "sem a migração 2" in capsys.readouterr().out
 
 # < the end >──────────────────────────────────────────────────────────────────────────

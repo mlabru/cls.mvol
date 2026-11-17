@@ -22,7 +22,14 @@ categorias:
      previsto) em volumes e ausente das observações, dentro da janela
      coberta por elas: cópia manual para VOL_SYNC_DIR, volDBWriter.py que
      falhou;
-  3) nome inválido -- observação cujo nome não segue o padrão .mvol.
+  3) nome inválido -- observação cujo nome não segue o padrão .mvol;
+  4) listado sem recepção -- observação com received_at NULL listada há
+     mais que --grace (pelo created_at, relógio deste host): o vol_sync.sh
+     viu o arquivo no servidor e ele não chegou ao VOL_SYNC_DIR (rsync
+     falhando, ou um reenvio ainda não baixado).
+mais o total de reenvios (resends: o mesmo nome reapareceu no servidor
+depois de recebido).  4 e reenvios exigem a migração 2 do esquema; num
+banco anterior o relatório só avisa.
 
 a janela da categoria 2 é a faixa [menor, maior] timestamp das observações.
 abre o banco somente para leitura (mode=ro): nunca cria, migra nem escreve.
@@ -30,6 +37,8 @@ abre o banco somente para leitura (mode=ro): nunca cria, migra nem escreve.
 uso:
     python volAudit.py [catalog.db] [-s EEE] [--grace MIN] [-c]
 
+2026.nov  mlabru  categoria 4 (listado sem recepção) e reenvios, da migração 2
+                  (received_at, resends)
 2026.nov  mlabru  imports cls_common.* (pacote do repo cls.common, via
                   CLS_PYLIB; antes symlinks de diretório)
 2026.out  mlabru  refatoração para legibilidade: audit() e print_report()
@@ -318,6 +327,86 @@ def _find_unlisted(fdct_observations: dict, fdct_volumes: dict,
     return sorted(llst_unlisted)
 
 # ─────────────────────────────────────────────────────────────────────────────────────
+def _read_reception(fs_dbase_path: str) -> list | None:
+    """
+    colunas de recepção (migração 2) das observações, somente leitura
+
+    :returns: [(fullpath, created_at, received_at, resends)], ou None se o
+              banco é anterior à migração 2 (sem as colunas)
+    """
+    lconn = sqlite3.connect(f"file:{fs_dbase_path}?mode=ro", uri=True, timeout=10)
+
+    try:
+        lset_cols = {lt[1] for lt in lconn.execute(f"PRAGMA table_info({ct.CS_TABLE})")}
+
+        if not {"received_at", "resends"} <= lset_cols:
+            # ok
+            return None
+
+        # ok
+        return lconn.execute(f"SELECT fullpath, created_at, received_at, resends "
+                             f"FROM {ct.CS_TABLE}").fetchall()
+
+    finally:
+        lconn.close()
+
+# ─────────────────────────────────────────────────────────────────────────────────────
+def _station_of(fs_fullpath: str) -> str | None:
+    """
+    sigla da estação pelo nome do arquivo, ou None se o nome for inválido
+    """
+    try:
+        # ok
+        return mv.parse_mvol(fs_fullpath).product.station
+
+    except ValueError:
+        # ok
+        return None
+
+# ─────────────────────────────────────────────────────────────────────────────────────
+def _find_reception(flst_rows: list | None, fs_station: str | None,
+                    ff_grace_limit: float) -> dict | None:
+    """
+    categoria 4 (listado sem recepção, listado antes de ff_grace_limit) e
+    reenvios
+
+    :returns: {"not_received": [(created_at, fullpath)], "resends": [(n,
+              fullpath)]}, ou None sem a migração 2
+    """
+    if flst_rows is None:
+        # ok
+        return None
+
+    llst_not_received = []
+    llst_resends = []
+
+    for ls_fullpath, ls_created_at, ls_received_at, li_resends in flst_rows:
+        if fs_station and _station_of(ls_fullpath) != fs_station:
+            # next
+            continue
+
+        if li_resends:
+            llst_resends.append((li_resends, ls_fullpath))
+
+        if ls_received_at is not None:
+            # next
+            continue
+
+        try:
+            lf_created = datetime.datetime.fromisoformat(ls_created_at).timestamp()
+
+        # created_at ausente/ilegível: sem como aplicar a carência, entra
+        except (TypeError, ValueError):
+            lf_created = 0.0
+
+        if lf_created < ff_grace_limit:
+            llst_not_received.append((ls_created_at or "?", ls_fullpath))
+
+    # ok
+    return {"not_received": sorted(llst_not_received),
+            "resends": sorted(llst_resends, reverse=True)}
+
+# ─────────────────────────────────────────────────────────────────────────────────────
 def audit(fs_dbase_path: str, fs_station: str | None = None,
           fi_grace_min: int = MI_GRACE_MIN, ff_now: float | None = None) -> dict:
     """
@@ -334,7 +423,8 @@ def audit(fs_dbase_path: str, fs_station: str | None = None,
 
     :raises sqlite3.Error: banco/tabela ilegível
 
-    :returns: dict com as listas "unregistered", "unlisted", "invalid", o
+    :returns: dict com as listas "unregistered", "unlisted", "invalid",
+              "reception" (_find_reception; None sem a migração 2), o
               nº de volumes sintéticos ignorados "synthetic" e a janela
               "window" (min, max) ou None
     """
@@ -364,6 +454,8 @@ def audit(fs_dbase_path: str, fs_station: str | None = None,
     return {"unregistered": _find_unregistered(ldct_observations, ldct_volumes, lf_grace_limit),
             "unlisted": _find_unlisted(ldct_observations, ldct_volumes, lt_window),
             "invalid": sorted(llst_invalid),
+            "reception": _find_reception(_read_reception(fs_dbase_path), ls_station,
+                                         lf_grace_limit),
             "synthetic": li_synthetic,
             "window": lt_window}
 
@@ -384,6 +476,18 @@ def _print_counts(fdct_result: dict) -> None:
     print(f"servidor sem registro: {len(fdct_result['unregistered'])}")
     print(f"registro sem servidor: {len(fdct_result['unlisted'])}")
     print(f"nome inválido:         {len(fdct_result['invalid'])}")
+
+    ldct_reception = fdct_result.get("reception")
+
+    if ldct_reception is None:
+        print("listado sem recepção:  (banco sem a migração 2 do esquema)")
+
+    else:
+        li_files = len(ldct_reception["resends"])
+        li_total = sum(li for li, _ in ldct_reception["resends"])
+        print(f"listado sem recepção:  {len(ldct_reception['not_received'])}")
+        print(f"reenvios:              {li_total} (em {li_files} arquivo(s))")
+
     print(f"(volumes interpolados/previstos ignorados: {fdct_result['synthetic']})")
 
 # ─────────────────────────────────────────────────────────────────────────────────────
@@ -434,6 +538,28 @@ def _print_invalid(flst_invalid: list) -> None:
         print(f"{fmt_epoch(lf_mtime):19}  {ls_fullpath}")
 
 # ─────────────────────────────────────────────────────────────────────────────────────
+def _print_reception(fdct_reception: dict | None) -> None:
+    """
+    lista a categoria 4 e os arquivos reenviados
+    """
+    if not fdct_reception:
+        return
+
+    if fdct_reception["not_received"]:
+        print("\n# listado sem recepção (visto no servidor, não chegou ao VOL_SYNC_DIR)")
+        print(f"{'listado em (created_at, UTC)':32}  fullpath (relativo a REMOTE_DIR)")
+
+        for ls_created_at, ls_fullpath in fdct_reception["not_received"]:
+            print(f"{ls_created_at:32}  {ls_fullpath}")
+
+    if fdct_reception["resends"]:
+        print("\n# reenvios (o mesmo nome reapareceu no servidor depois de recebido)")
+        print(f"{'vezes':>5}  fullpath (relativo a REMOTE_DIR)")
+
+        for li_resends, ls_fullpath in fdct_reception["resends"]:
+            print(f"{li_resends:5d}  {ls_fullpath}")
+
+# ─────────────────────────────────────────────────────────────────────────────────────
 def print_report(fdct_result: dict, fb_count: bool = False) -> None:
     """
     imprime o relatório na saída padrão
@@ -452,6 +578,7 @@ def print_report(fdct_result: dict, fb_count: bool = False) -> None:
     _print_unregistered(fdct_result["unregistered"])
     _print_unlisted(fdct_result["unlisted"])
     _print_invalid(fdct_result["invalid"])
+    _print_reception(fdct_result.get("reception"))
 
 # ─────────────────────────────────────────────────────────────────────────────────────
 def main() -> int:

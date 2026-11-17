@@ -19,7 +19,13 @@
 # - rsync --files-from com os arquivos DESTA listagem para VOL_SYNC_DIR,
 #   sempre removendo a origem (--remove-source-files): este script é o único
 #   responsável pelos downloads do servidor.
+# - marca no catalog.db (received_at) os arquivos da listagem que chegaram
+#   ao VOL_SYNC_DIR (volDBWriter --received), inclusive numa falha parcial.
 #
+#
+# 2026.nov  mlabru  histórico de recepção: mark_received (volDBWriter --received)
+#                   depois do rsync, também numa falha parcial; o banco
+#                   passa a dizer o que foi RECEBIDO, não só listado
 #
 # 2026.nov  mlabru  - falha do rsync sai com rc 1 (antes só [warn] e rc 0: um
 #                     sync quebrado por dias só aparecia lendo o .err);
@@ -296,13 +302,31 @@ persist_listing() {
 } # persist_listing
 
 # -------------------------------------------------------------------------------------
+# marca no catalog.db (received_at) os arquivos da lista de transferência que
+# estão agora em VOL_SYNC_DIR (volDBWriter.py --received).  Confere o disco,
+# não a saída do rsync: roda também depois de um rsync com falha, e numa
+# falha parcial os arquivos que vieram ficam marcados
+#
+# uso: mark_received <arquivo_lista_de_transferência>
+# retorno: 0 se gravou, 1 se falhou
+#
+mark_received() {
+
+    python3 "${LIB_DIR}/apps/volDBWriter.py" "${VOL_DBASE_FILE}" --received \
+            --sync-dir "${VOL_SYNC_DIR}" < "$1" 2>>"${VOL_LOG_ERR}"
+
+} # mark_received
+
+# -------------------------------------------------------------------------------------
 # fluxo principal:
 #   1. diretórios e lock de instância;
 #   2. lista os .mvol do servidor (uma chamada ssh);
 #   3. grava a listagem no catalog.db -- se falhar, ABORTA sem baixar nada;
 #   4. monta a lista de transferência com os arquivos desta listagem;
-#   5. rsync com remoção da origem -- falha sai com rc 1;
-#   6. heartbeat de sucesso (VOL_SYNC_OK_FILE).
+#   5. rsync com remoção da origem;
+#   6. marca a recepção (received_at) do que está no VOL_SYNC_DIR -- mesmo
+#      depois de falha parcial; falha do rsync ou da marcação sai com rc 1;
+#   7. heartbeat de sucesso (VOL_SYNC_OK_FILE).
 #
 main() {
 
@@ -352,17 +376,32 @@ main() {
     # logger
     log "[info]: arquivos a transferir: $(grep -c . "${VOL_FILES_FROM}" || true)"
 
-    # 5. sincroniza.  Falha sai com rc 1 (o cron/monitor precisa ver) e sem
-    #    heartbeat; nada se perde: o que não veio continua no servidor e
-    #    vai na próxima rodada
-    if ! sync_files "${VOL_FILES_FROM}"; then
+    # 5. sincroniza.  Uma falha não interrompe aqui: o passo 6 ainda marca o
+    #    que chegou numa falha parcial
+    local lb_sync_ok=true
+
+    sync_files "${VOL_FILES_FROM}" || lb_sync_ok=false
+
+    # 6. recepção: received_at dos arquivos que estão agora no VOL_SYNC_DIR
+    if ! mark_received "${VOL_FILES_FROM}"; then
+        # logger
+        log "[error]: falha ao marcar a recepção no catalog.db; veja ${VOL_LOG_ERR}"
+        # quit fail (os arquivos estão salvos no VOL_SYNC_DIR; só o registro
+        # da recepção ficou faltando)
+        exit 1
+    fi
+
+    # falha do rsync sai com rc 1 (o cron/monitor precisa ver) e sem
+    # heartbeat; nada se perde: o que não veio continua no servidor e vai na
+    # próxima rodada
+    if ! ${lb_sync_ok}; then
         # logger
         log "[error]: falha ao sincronizar arquivos; veja ${VOL_LOG_ERR}"
         # quit fail
         exit 1
     fi
 
-    # 6. último sucesso, para o vol_check.sh
+    # 7. último sucesso, para o vol_check.sh
     cls_heartbeat "${VOL_SYNC_OK_FILE}"
 
     # logger

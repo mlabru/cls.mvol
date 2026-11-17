@@ -11,6 +11,7 @@ os scripts são carregados com <PFX>_NO_MAIN=true e as etapas externas
 (ssh, rsync, Python) trocadas por funções falsas, então o main roda de
 verdade sem rede nem banco.  Tudo em <tmp> (VOL_PATH, VOL_SYNC_DIR)
 
+2026.nov  mlabru  vol_sync.sh: passo de recepção (mark_received)
 2026.nov  mlabru  initial version (Linux/Python)
 """
 # < imports >──────────────────────────────────────────────────────────────────────────
@@ -19,6 +20,7 @@ verdade sem rede nem banco.  Tudo em <tmp> (VOL_PATH, VOL_SYNC_DIR)
 import os
 import pathlib
 import shutil
+import sqlite3
 import subprocess
 import time
 
@@ -97,7 +99,8 @@ def test_sync_files_rc_do_rsync(tmp_path, fi_rsync_rc, fi_rc, fs_level):
 
 # etapas externas falsas: listagem com um arquivo, gravação no banco ok
 MS_SYNC_STUBS = ('list_remote_files() { echo "1|Cangucu/250/x.mvol"; }; '
-                 'persist_listing() { return 0; }; ')
+                 'persist_listing() { return 0; }; '
+                 'mark_received() { echo "marcou $(cat "$1")"; return 0; }; ')
 
 def test_sync_bem_sucedido_grava_heartbeat(tmp_path):
     lproc = _bash(tmp_path, "vol_sync",
@@ -127,6 +130,35 @@ def test_sync_falha_no_banco_sai_1_sem_heartbeat(tmp_path):
 
     assert "rc=1" in lproc.stdout
     assert not _ok_file(tmp_path, "vol_sync").exists()
+
+def test_sync_marca_recepcao_mesmo_com_falha_do_rsync(tmp_path):
+    # falha parcial: o que veio fica marcado; rc 1 do mesmo jeito
+    lproc = _bash(tmp_path, "vol_sync",
+                  MS_SYNC_STUBS + 'sync_files() { return 1; }; li=0; (main) || li=$?; echo "rc=${li}"')
+
+    assert "marcou Cangucu/250/x.mvol" in lproc.stdout
+    assert "rc=1" in lproc.stdout
+
+def test_sync_falha_ao_marcar_recepcao_sai_1_sem_heartbeat(tmp_path):
+    lproc = _bash(tmp_path, "vol_sync",
+                  MS_SYNC_STUBS + 'mark_received() { return 1; }; sync_files() { return 0; }; '
+                  'li=0; (main) || li=$?; echo "rc=${li}"')
+
+    assert "rc=1" in lproc.stdout
+    assert not _ok_file(tmp_path, "vol_sync").exists()
+
+def test_sync_mark_received_real_grava_no_banco(tmp_path):
+    # sem stub: o mark_received chama o volDBWriter --received de verdade
+    (tmp_path / "radar" / "Cangucu" / "250").mkdir(parents=True)
+    (tmp_path / "radar" / "Cangucu" / "250" / "CGU-250--2026-06-15--13-40-22.mvol").write_bytes(b"x")
+    lproc = _bash(tmp_path, "vol_sync",
+                  'list_remote_files() { echo "1|Cangucu/250/CGU-250--2026-06-15--13-40-22.mvol"; }; '
+                  'sync_files() { return 0; }; li=0; (main) || li=$?; echo "rc=${li}"')
+
+    assert "rc=0" in lproc.stdout, lproc.stderr
+    lconn = sqlite3.connect(tmp_path / "catalog.db")
+    assert [(1,)] == lconn.execute("SELECT received_at IS NOT NULL FROM vol_raw_observations").fetchall()
+    lconn.close()
 
 # < vol_register.sh: main >────────────────────────────────────────────────────────────
 

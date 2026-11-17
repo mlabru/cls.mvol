@@ -7,6 +7,7 @@ test_volDBWriter
 testes unitários de volDBWriter (persistência das observações de
 list_remote_files() no catalog.db)
 
+2026.nov  mlabru  histórico de recepção: reenvio, mark_received, --received
 2026.nov  mlabru  banco migrado pela fixture; recusa banco não migrado; a
                   migração obs_time -> timestamp foi para cls.common/test_schema
 2026.set  mlabru  fullpath relativo a REMOTE_DIR; caminho absoluto recusado
@@ -159,7 +160,7 @@ def test_main_sem_linhas_validas_nao_toca_no_banco(tmp_path, monkeypatch):
     ls_dbase = str(tmp_path / "nao_existe.db")
 
     monkeypatch.setattr(vcw, "arg_parse",
-                        lambda: type("Args", (), {"dbase": ls_dbase})())
+                        lambda: type("Args", (), {"dbase": ls_dbase, "received": False})())
     monkeypatch.setattr("sys.stdin", iter([""]))
 
     li_rc = vcw.main()
@@ -176,7 +177,7 @@ def test_main_caminho_absoluto_retorna_1_e_nao_toca_no_banco(tmp_path, monkeypat
     ls_dbase = str(tmp_path / "nao_existe.db")
 
     monkeypatch.setattr(vcw, "arg_parse",
-                        lambda: type("Args", (), {"dbase": ls_dbase})())
+                        lambda: type("Args", (), {"dbase": ls_dbase, "received": False})())
     monkeypatch.setattr("sys.stdin", iter([f"42.0|/home/webpca/radar/{MS_PATH}\n"]))
 
     li_rc = vcw.main()
@@ -185,3 +186,87 @@ def test_main_caminho_absoluto_retorna_1_e_nao_toca_no_banco(tmp_path, monkeypat
     assert not (tmp_path / "nao_existe.db").exists()
 
 # < the end >──────────────────────────────────────────────────────────────────────────
+
+
+# < histórico de recepção (migração 2) >───────────────────────────────────────────────
+
+def _obs(fs_dbase):
+    lconn = sqlite3.connect(fs_dbase)
+
+    try:
+        return lconn.execute(f"SELECT fullpath, mtime, last_mtime, received_at, resends "
+                             f"FROM {ct.CS_TABLE} ORDER BY fullpath").fetchall()
+
+    finally:
+        lconn.close()
+
+
+def test_listagem_nova_nasce_nao_recebida(tmp_path):
+    ls_dbase = str(tmp_path / "catalog.db")
+
+    vcw.write_observations(ls_dbase, [(MS_PATH, 10.0, MI_TS)])
+
+    assert [(MS_PATH, 10.0, 10.0, None, 0)] == _obs(ls_dbase)
+
+
+def test_mark_received_so_o_que_esta_no_sync_dir(tmp_path):
+    ls_dbase = str(tmp_path / "catalog.db")
+    lpth_sync = tmp_path / "radar"
+    (lpth_sync / MS_PATH).parent.mkdir(parents=True)
+    (lpth_sync / MS_PATH).write_bytes(b"x")
+    vcw.write_observations(ls_dbase, [(MS_PATH, 10.0, MI_TS), ("x/y/falta.mvol", 11.0, None)])
+
+    assert (1, 1) == vcw.mark_received(ls_dbase, [MS_PATH, "x/y/falta.mvol"], lpth_sync)
+
+    ldct = {lt[0]: lt[3] for lt in _obs(ls_dbase)}
+    assert ldct[MS_PATH] is not None and ldct["x/y/falta.mvol"] is None
+
+    # de novo: já recebido, não remarca
+    assert (0, 1) == vcw.mark_received(ls_dbase, [MS_PATH, "x/y/falta.mvol"], lpth_sync)
+
+
+def test_reenvio_conta_e_volta_a_nao_recebido(tmp_path):
+    ls_dbase = str(tmp_path / "catalog.db")
+    lpth_sync = tmp_path / "radar"
+    (lpth_sync / MS_PATH).parent.mkdir(parents=True)
+    (lpth_sync / MS_PATH).write_bytes(b"x")
+
+    vcw.write_observations(ls_dbase, [(MS_PATH, 10.0, MI_TS)])
+    vcw.mark_received(ls_dbase, [MS_PATH], lpth_sync)
+
+    # o mesmo nome de novo no servidor: reenvio
+    assert 0 == vcw.write_observations(ls_dbase, [(MS_PATH, 20.0, MI_TS)])
+    assert [(MS_PATH, 10.0, 20.0, None, 1)] == _obs(ls_dbase)
+
+
+def test_nome_que_so_continua_no_servidor_nao_e_reenvio(tmp_path):
+    # rsync falhou: o nome aparece de novo na próxima listagem sem ter chegado
+    ls_dbase = str(tmp_path / "catalog.db")
+
+    vcw.write_observations(ls_dbase, [(MS_PATH, 10.0, MI_TS)])
+    vcw.write_observations(ls_dbase, [(MS_PATH, 10.0, MI_TS)])
+
+    assert [(MS_PATH, 10.0, 10.0, None, 0)] == _obs(ls_dbase)
+
+
+def test_main_received(tmp_path, monkeypatch):
+    ls_dbase = str(tmp_path / "catalog.db")
+    lpth_sync = tmp_path / "radar"
+    (lpth_sync / MS_PATH).parent.mkdir(parents=True)
+    (lpth_sync / MS_PATH).write_bytes(b"x")
+    vcw.write_observations(ls_dbase, [(MS_PATH, 10.0, MI_TS)])
+
+    monkeypatch.setattr(vcw, "arg_parse", lambda: type(
+        "Args", (), {"dbase": ls_dbase, "received": True, "sync_dir": lpth_sync})())
+    monkeypatch.setattr("sys.stdin", iter([f"{MS_PATH}\n", "\n"]))
+
+    assert 0 == vcw.main()
+    assert _obs(ls_dbase)[0][3] is not None
+
+    # banco fora da versão: rc 1
+    monkeypatch.setattr(vcw, "arg_parse", lambda: type(
+        "Args", (), {"dbase": str(tmp_path / "outro.db"), "received": True,
+                     "sync_dir": lpth_sync})())
+    monkeypatch.setattr("sys.stdin", iter([f"{MS_PATH}\n"]))
+
+    assert 1 == vcw.main()
