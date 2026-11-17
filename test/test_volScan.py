@@ -7,6 +7,7 @@ test_volScan
 testes unitários de volScan (registro dos .mvol na tabela volumes:
 timestamp UTC, varredura incremental, nomes inválidos)
 
+2026.nov  mlabru  caminho rápido (escala): inalterado pulado, symlinks
 2026.nov  mlabru  arquivo devolvido com has_mvol=0 volta a has_mvol=1
 2026.out  mlabru  o SHA1 roda sem lock de escrita; reconferência na escrita
 2026.set  mlabru  initial version (Linux/Python)
@@ -193,5 +194,56 @@ def test_scan_copias_novas_na_mesma_varredura(tmp_path):
     ldct = vs.scan(ls_db, [lpth_raw])
 
     assert {"inserted": 2, "updated": 0, "skipped": 0, "ignored": 2} == ldct
+
+# < caminho rápido (escala) >──────────────────────────────────────────────────────────
+
+def _fullpaths(fs_db):
+    lconn = sqlite3.connect(fs_db)
+
+    try:
+        return sorted(lt[0] for lt in lconn.execute("SELECT fullpath FROM volumes"))
+
+    finally:
+        lconn.close()
+
+def test_rapido_pula_inalterado_e_detecta_tamanho_novo(tmp_path):
+    ls_db = str(tmp_path / "catalog.db")
+    lpth_raw = _tree(tmp_path)
+    vs.scan(ls_db, [lpth_raw])
+
+    # nada mudou: tudo pulado pelo índice (o "lixo" segue ignorado pelo nome)
+    assert {"inserted": 0, "updated": 0, "skipped": 2, "ignored": 1} == vs.scan(ls_db, [lpth_raw])
+
+    # tamanho mudou: sai do caminho rápido e é atualizado
+    (lpth_raw / "Cangucu" / "250" / "CGU-250--2026-06-15--13-50-22.mvol").write_bytes(b"xyz")
+    assert {"inserted": 0, "updated": 1, "skipped": 1, "ignored": 1} == vs.scan(ls_db, [lpth_raw])
+
+def test_sync_dir_por_symlink_grava_o_caminho_real(tmp_path):
+    # VOL_SYNC_DIR dado por um link (ex.: /mnt/... -> disco): fullpath é o
+    # caminho canônico, como era com o resolve() por arquivo
+    ls_db = str(tmp_path / "catalog.db")
+    lpth_raw = _tree(tmp_path)
+    lpth_link = tmp_path / "link"
+    lpth_link.symlink_to(lpth_raw, target_is_directory=True)
+
+    vs.scan(ls_db, [lpth_link])
+
+    assert all(ls.startswith(str(lpth_raw.resolve())) for ls in _fullpaths(ls_db))
+    # e a próxima varredura pelo mesmo link pula tudo
+    assert 2 == vs.scan(ls_db, [lpth_link])["skipped"]
+
+def test_arquivo_symlink_grava_o_destino(tmp_path):
+    ls_db = str(tmp_path / "catalog.db")
+    lpth_real = tmp_path / "fora" / "CGU-250--2026-06-15--13-40-22.mvol"
+    lpth_real.parent.mkdir()
+    lpth_real.write_bytes(b"abc")
+    lpth_dir = tmp_path / "raw" / "Cangucu" / "250"
+    lpth_dir.mkdir(parents=True)
+    (lpth_dir / lpth_real.name).symlink_to(lpth_real)
+
+    vs.scan(ls_db, [tmp_path / "raw"])
+
+    assert [str(lpth_real.resolve())] == _fullpaths(ls_db)
+    assert 1 == vs.scan(ls_db, [tmp_path / "raw"])["skipped"]
 
 # < the end >──────────────────────────────────────────────────────────────────────────
