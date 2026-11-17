@@ -21,6 +21,12 @@
 #   responsável pelos downloads do servidor.
 #
 #
+# 2026.nov  mlabru  - falha do rsync sai com rc 1 (antes só [warn] e rc 0: um
+#                     sync quebrado por dias só aparecia lendo o .err);
+#                     rc 24 (arquivo sumiu na origem) continua só aviso
+#                   - heartbeat VOL_SYNC_OK_FILE no fim de toda execução bem
+#                     sucedida (servidor vazio incluído), para o vol_check.sh
+#
 # 2026.nov  mlabru  - list_remote_files: stderr do ssh/find separado da
 #                     listagem (antes 2>&1 misturava avisos nas linhas); um
 #                     erro parcial do find remoto (rc != 0 com linhas
@@ -213,10 +219,20 @@ sync_files() {
     local larr_opts=(-avz --timeout="${GI_RSYNC_TIMEOUT}" -e "ssh ${MT_SSH_OPTS[*]}"
                      --files-from="${ls_files_from}" --remove-source-files)
 
-    if ! ls_rsync_out=$(rsync "${larr_opts[@]}" \
-            "${VOL_REMOTE_HOST}:${VOL_REMOTE_DIR}/" "${VOL_SYNC_DIR}/" 2>&1); then
+    local li_rc=0
+
+    ls_rsync_out=$(rsync "${larr_opts[@]}" \
+        "${VOL_REMOTE_HOST}:${VOL_REMOTE_DIR}/" "${VOL_SYNC_DIR}/" 2>&1) || li_rc=$?
+
+    # rc 24: algum arquivo da lista sumiu da origem antes da cópia -- os
+    # demais vieram; o que sumiu não é mais deste servidor.  Só avisa
+    if [ "${li_rc}" -eq 24 ]; then
+        echo "[$(date -u '+%F %T')] [warn]: rsync rc=24 (arquivo sumiu na origem): ${ls_rsync_out}" >> "${VOL_LOG_ERR}"
+        li_rc=0
+
+    elif [ "${li_rc}" -ne 0 ]; then
         # stderr real do rsync vai para VOL_LOG_ERR
-        echo "[$(date -u '+%F %T')] [error]: rsync falhou: ${ls_rsync_out}" >> "${VOL_LOG_ERR}"
+        echo "[$(date -u '+%F %T')] [error]: rsync falhou (rc=${li_rc}): ${ls_rsync_out}" >> "${VOL_LOG_ERR}"
         # quit fail
         return 1
     fi
@@ -285,7 +301,8 @@ persist_listing() {
 #   2. lista os .mvol do servidor (uma chamada ssh);
 #   3. grava a listagem no catalog.db -- se falhar, ABORTA sem baixar nada;
 #   4. monta a lista de transferência com os arquivos desta listagem;
-#   5. rsync com remoção da origem.
+#   5. rsync com remoção da origem -- falha sai com rc 1;
+#   6. heartbeat de sucesso (VOL_SYNC_OK_FILE).
 #
 main() {
 
@@ -311,6 +328,8 @@ main() {
     if [ -z "${ls_remote_output}" ]; then
         # logger
         log "[info]: nenhum .mvol no servidor; nada a sincronizar."
+        # servidor vazio também é uma execução bem sucedida
+        cls_heartbeat "${VOL_SYNC_OK_FILE}"
         # ok
         exit 0
     fi
@@ -333,11 +352,18 @@ main() {
     # logger
     log "[info]: arquivos a transferir: $(grep -c . "${VOL_FILES_FROM}" || true)"
 
-    # 5. sincroniza (falha só avisa: o que não veio fica para a próxima rodada)
+    # 5. sincroniza.  Falha sai com rc 1 (o cron/monitor precisa ver) e sem
+    #    heartbeat; nada se perde: o que não veio continua no servidor e
+    #    vai na próxima rodada
     if ! sync_files "${VOL_FILES_FROM}"; then
         # logger
-        log "[warn]: falha ao sincronizar arquivos."
+        log "[error]: falha ao sincronizar arquivos; veja ${VOL_LOG_ERR}"
+        # quit fail
+        exit 1
     fi
+
+    # 6. último sucesso, para o vol_check.sh
+    cls_heartbeat "${VOL_SYNC_OK_FILE}"
 
     # logger
     log "[info]: sincronização concluída."

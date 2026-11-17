@@ -4,6 +4,9 @@
 # vol_cfg.sh
 # variáveis de configuração compartilhadas
 #
+# 2026.nov  mlabru  heartbeats VOL_SYNC_OK_FILE/VOL_REGISTER_OK_FILE e o limite
+#                   VOL_CHECK_MAX_AGE_MIN (vol_check.sh)
+#
 # 2026.nov  mlabru  cls_setup_pythonpath: pacote Python comum (cls_common)
 #                   por CLS_PYLIB, no lugar dos symlinks apps/{dbase,radar,util}
 #
@@ -91,6 +94,14 @@ VOL_DATA="${VOL_PATH}/data"
 VOL_STATE="${VOL_DATA}/state"
 # arquivos temporários
 VOL_TEMP="${VOL_DATA}/temp"
+
+# heartbeats: último sucesso de cada cron (cls_heartbeat), conferidos pelo
+# vol_check.sh (monitoramento).  Um cron parado ou que só falha deixa o
+# heartbeat envelhecer além de VOL_CHECK_MAX_AGE_MIN (padrão: 3 execuções
+# perdidas do */10 do crontab)
+VOL_SYNC_OK_FILE="${VOL_STATE}/vol_sync.ok"
+VOL_REGISTER_OK_FILE="${VOL_STATE}/vol_register.ok"
+VOL_CHECK_MAX_AGE_MIN="${VOL_CHECK_MAX_AGE_MIN:-30}"
 
 # catalog.db compartilhado, onde vol_sync.sh (volDBWriter.py) grava as
 # observações de todo arquivo listado (fullpath, tempo do nome e mtime),

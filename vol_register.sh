@@ -21,6 +21,11 @@
 # bloqueiam o registro do que já chegou (o rsync só renomeia para *.mvol
 # arquivos completos).
 #
+# 2026.nov  mlabru  - falha do volPurge.py sai com o rc dele (antes só [warn] e
+#                     rc 0); o registro feito antes continua valendo
+#                   - heartbeat VOL_REGISTER_OK_FILE no fim de toda execução
+#                     bem sucedida, para o vol_check.sh
+#
 # 2026.out  mlabru  - normalização com 27.nowcast/25.oflow: acquire_instance_lock
 #                     (mesmo nome do vol_sync.sh), VOL_REGISTER_NO_MAIN e nível
 #                     [error] (era [erro]; o cls_common.sh e os outros
@@ -125,7 +130,8 @@ acquire_instance_lock() {
 #   1. diretórios, lock de instância e rotação dos logs dos filhos;
 #   2. registro (volScan.py) -- falha aqui encerra com o mesmo rc, sem
 #      retenção;
-#   3. retenção (volPurge.py), se ligada -- falha aqui só avisa.
+#   3. retenção (volPurge.py), se ligada -- falha sai com o rc dele;
+#   4. heartbeat de sucesso (VOL_REGISTER_OK_FILE).
 #
 main() {
 
@@ -163,10 +169,16 @@ main() {
         run_purge || li_rc=$?
 
         if [ "${li_rc}" -ne 0 ]; then
-            # logger
-            log "[warn]: volPurge.py terminou com rc=${li_rc}; veja ${VOL_LOG_PURGE_ERR}"
+            # o registro já foi feito; o rc != 0 é para o cron/monitor ver
+            # que a retenção falhou (antes só [warn] e rc 0)
+            log "[error]: volPurge.py terminou com rc=${li_rc}; veja ${VOL_LOG_PURGE_ERR}"
+            # quit fail
+            exit "${li_rc}"
         fi
     fi
+
+    # 4. último sucesso, para o vol_check.sh
+    cls_heartbeat "${VOL_REGISTER_OK_FILE}"
 
     # logger
     log "[info]: registro concluído."
