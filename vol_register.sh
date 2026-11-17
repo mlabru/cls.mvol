@@ -146,7 +146,7 @@ main() {
                    "${VOL_LOG_PURGE_APP}" "${VOL_LOG_PURGE_ERR}"
 
     # módulos precisam estar em PYTHONPATH pois apps/ não é um package
-    export PYTHONPATH="${LIB_DIR}/apps"
+    export PYTHONPATH="${LIB_DIR}/apps${PYTHONPATH:+:${PYTHONPATH}}"
 
     # 2. registro
     run_scan || li_rc=$?

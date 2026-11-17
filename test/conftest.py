@@ -47,4 +47,15 @@ os.environ["CLS_ENV_FILE"] = os.devnull
 os.environ.setdefault("CLS_LIB", str(pathlib.Path(__file__).resolve().parents[3]
                                      / "cls.common" / "bash"))
 
+# pacote Python comum (cls_common): CLS_PYLIB do ambiente ou o cls.common
+# irmão -- no sys.path desta suíte e no PYTHONPATH dos subprocessos (os
+# scripts shell o recebem de novo por cls_setup_pythonpath, sem repetir)
+os.environ.setdefault("CLS_PYLIB", str(pathlib.Path(__file__).resolve().parents[3]
+                                       / "cls.common" / "python"))
+if os.environ["CLS_PYLIB"] not in sys.path:
+    sys.path.insert(0, os.environ["CLS_PYLIB"])
+if os.environ["CLS_PYLIB"] not in os.environ.get("PYTHONPATH", "").split(":"):
+    os.environ["PYTHONPATH"] = ":".join(filter(None, (os.environ["CLS_PYLIB"],
+                                                      os.environ.get("PYTHONPATH"))))
+
 # < the end >--------------------------------------------------------------------------

@@ -96,7 +96,7 @@ launch_app()
     echo
 
     # módulos precisam estar em PYTHONPATH pois apps/ não é um package
-    PYTHONPATH="${ls_project_dir}/apps" python3 "${ls_script}" "$@"
+    PYTHONPATH="${ls_project_dir}/apps${PYTHONPATH:+:${PYTHONPATH}}" python3 "${ls_script}" "$@"
 
     # desativa o virtualenv, se foi ativado
     type deactivate &>/dev/null && deactivate

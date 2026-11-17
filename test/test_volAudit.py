@@ -19,8 +19,8 @@ import hashlib
 import sqlite3
 
 # model
-import dbase.vol_catalog as ct
-import dbase.vol_dbase as vd
+import cls_common.dbase.vol_catalog as ct
+import cls_common.dbase.vol_dbase as vd
 import volAudit as va
 
 # < constants >────────────────────────────────────────────────────────────────────────

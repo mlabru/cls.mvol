@@ -30,6 +30,8 @@ abre o banco somente para leitura (mode=ro): nunca cria, migra nem escreve.
 uso:
     python volAudit.py [catalog.db] [-s EEE] [--grace MIN] [-c]
 
+2026.nov  mlabru  imports cls_common.* (pacote do repo cls.common, via
+                  CLS_PYLIB; antes symlinks de diretório)
 2026.out  mlabru  refatoração para legibilidade: audit() e print_report()
                   divididos numa função por etapa/seção; status por
                   vol_dbase.CI_STATUS_* em vez de números mágicos
@@ -55,9 +57,9 @@ import sys
 import time
 
 # locals
-import radar.rd_mvol as mv
-import dbase.vol_catalog as ct
-import dbase.vol_dbase as vd
+import cls_common.radar.rd_mvol as mv
+import cls_common.dbase.vol_catalog as ct
+import cls_common.dbase.vol_dbase as vd
 
 # < constants >────────────────────────────────────────────────────────────────────────
 
@@ -495,8 +497,8 @@ if "__main__" == __name__:
 
     # rd_mvol/vol_product_key forçam DEBUG no próprio logger: sem isto, cada
     # observação gera traces ">> parse_mvol" no stderr
-    logging.getLogger("radar.rd_mvol").setLevel(logging.WARNING)
-    logging.getLogger("dbase.vol_product_key").setLevel(logging.WARNING)
+    logging.getLogger("cls_common.radar.rd_mvol").setLevel(logging.WARNING)
+    logging.getLogger("cls_common.dbase.vol_product_key").setLevel(logging.WARNING)
 
     # run
     sys.exit(main())

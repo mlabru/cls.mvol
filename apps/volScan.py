@@ -31,6 +31,8 @@ regras:
 uso:
     python volScan.py <catalog.db> --raw-dir <dir> [--raw-dir <dir>...] [--no-sha1]
 
+2026.nov  mlabru  imports cls_common.* (pacote do repo cls.common, via
+                  CLS_PYLIB; antes symlinks de diretório)
 2026.nov  mlabru  fix: arquivo presente com has_mvol=0 (marcado ausente pelo
                   volPurge e depois devolvido) era pulado e ficava com
                   has_mvol=0 para sempre -- fora da retenção e da view
@@ -67,10 +69,10 @@ import time
 import typing
 
 # radar
-import radar.rd_mvol as mv
+import cls_common.radar.rd_mvol as mv
 
 # locals
-import dbase.vol_dbase as vd
+import cls_common.dbase.vol_dbase as vd
 
 # < constants >────────────────────────────────────────────────────────────────────────
 

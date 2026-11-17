@@ -33,6 +33,8 @@ uso:
     python volPurge.py <catalog.db> --sync-dir <dir> --retain-days N
                        [--max-days M] [--dry-run]
 
+2026.nov  mlabru  imports cls_common.* (pacote do repo cls.common, via
+                  CLS_PYLIB; antes symlinks de diretório)
 2026.nov  mlabru  arquivo ausente cujo diretório também sumiu não vira
                   has_mvol=0 (montagem parcial; contador "sem diretório")
 2026.out  mlabru  refatoração para legibilidade: purge() dividido em
@@ -53,7 +55,7 @@ import sys
 import time
 
 # locals
-import dbase.vol_dbase as vd
+import cls_common.dbase.vol_dbase as vd
 
 # < constants >────────────────────────────────────────────────────────────────────────
 

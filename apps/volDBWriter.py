@@ -19,6 +19,8 @@ grava, por arquivo:
 
 o schema vive só em vol_catalog.py (compartilhado por symlink).
 
+2026.nov  mlabru  imports cls_common.* (pacote do repo cls.common, via
+                  CLS_PYLIB; antes symlinks de diretório)
 2026.nov  mlabru  log em UTC (era hora local, contra o contrato "tudo é
                   UTC"); loga quantas observações eram novas
 2026.out  mlabru  refatoração para legibilidade: parse_lines() usa
@@ -50,8 +52,8 @@ import sys
 import time
 
 # locals
-import radar.rd_mvol as mv
-import dbase.vol_catalog as ct
+import cls_common.radar.rd_mvol as mv
+import cls_common.dbase.vol_catalog as ct
 
 # < constants >────────────────────────────────────────────────────────────────────────
 

@@ -18,7 +18,7 @@ import datetime
 import sqlite3
 
 # model
-import dbase.vol_dbase as vd
+import cls_common.dbase.vol_dbase as vd
 import volScan as vs
 
 # < helpers >──────────────────────────────────────────────────────────────────────────

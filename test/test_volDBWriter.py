@@ -23,7 +23,7 @@ import sqlite3
 import pytest
 
 # model
-import dbase.vol_catalog as ct
+import cls_common.dbase.vol_catalog as ct
 import volDBWriter as vcw
 
 # path/timestamp de referência (00:00:23 UTC de 2026-04-12)

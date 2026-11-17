@@ -22,6 +22,8 @@ uso (com o env.sh do ambiente carregado):
     python3 tst_feed.py --hours 2 [--drop-every 7] [--dry-run]
     python3 tst_feed.py --count 50
 
+2026.nov  mlabru  imports cls_common.* (pacote do repo cls.common, via
+                  CLS_PYLIB; antes symlinks de diretório)
 2026.out  mlabru  initial version (Linux/Python)
 """
 # < imports >──────────────────────────────────────────────────────────────────────────
@@ -90,7 +92,7 @@ def index_source(fpth_src: pathlib.Path) -> list:
     todos os .mvol da origem: [(epoch, série, caminho relativo)], em ordem
     cronológica (empate: pelo caminho)
     """
-    import radar.rd_mvol as mv
+    import cls_common.radar.rd_mvol as mv
 
     llst = []
 

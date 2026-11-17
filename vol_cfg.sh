@@ -4,6 +4,9 @@
 # vol_cfg.sh
 # variáveis de configuração compartilhadas
 #
+# 2026.nov  mlabru  cls_setup_pythonpath: pacote Python comum (cls_common)
+#                   por CLS_PYLIB, no lugar dos symlinks apps/{dbase,radar,util}
+#
 # 2026.nov  mlabru  CLS_LIB obrigatória (passo 2): sai o symlink cls_common.sh
 #                   da raiz do repo; sem cls.env/CLS_LIB, erro explícito
 #
@@ -130,5 +133,11 @@ source "${CLS_LIB}/cls_common.sh"
 # CLS_TST_ROOT nem para um servidor que não seja esta máquina
 cls_check_test_env -r "${VOL_REMOTE_IP}" "${VOL_SYNC_DIR}" "${VOL_PATH}" \
                       "${VOL_DBASE_FILE}" "${VOL_REMOTE_DIR}" || exit 1
+
+# < pacote Python comum >--------------------------------------------------------------
+
+# cls_common (dbase, radar, util; CLS_PYLIB no cls.env) no PYTHONPATH,
+# exportado para todo programa Python chamado daqui (cls_common.sh)
+cls_setup_pythonpath || exit 1
 
 # < the end >--------------------------------------------------------------------------

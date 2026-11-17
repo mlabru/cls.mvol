@@ -21,7 +21,7 @@ from unittest import mock
 import pytest
 
 # model
-import dbase.vol_dbase as vd
+import cls_common.dbase.vol_dbase as vd
 import volPurge as vp
 
 # < helpers >──────────────────────────────────────────────────────────────────────────

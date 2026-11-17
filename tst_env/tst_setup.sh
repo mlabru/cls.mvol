@@ -27,7 +27,8 @@
 #
 # 2026.nov  mlabru  projetos em <nn>.<proj>/cls.<proj> (era <nn>.<proj>/04.dvl);
 #                   env.sh com CLS_ENV/CLS_TST_ROOT (eram MET_*), CLS_LIB e
-#                   CLS_ENV_FILE=/dev/null (não herda o cls.env da máquina)
+#                   CLS_ENV_FILE=/dev/null (não herda o cls.env da máquina);
+#                   CLS_PYLIB (pacote Python cls_common)
 # 2026.out  mlabru  21.mrad sem RSM_REMOTE_*: o banco do mvol é a única fonte
 #                   do mrad (sem ssh/find nos .mvol)
 # 2026.out  mlabru  27.nowcast (era 25.nowcast, renumerado): TST_NWC_DIR
@@ -120,6 +121,7 @@ export CLS_TST_ROOT="${TST_ROOT}"
 # ele precisa está neste arquivo
 export CLS_ENV_FILE=/dev/null
 export CLS_LIB="${TST_CLS_LIB}"
+export CLS_PYLIB="${TST_CLS_DIR}/cls.common/python"
 
 # código e origem dos dados
 export TST_ENV_DIR="${TST_ENV_DIR}"

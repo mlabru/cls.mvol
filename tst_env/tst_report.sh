@@ -88,7 +88,7 @@ ${LB_COUNTS_ONLY} && exit 0
 # < dry-runs do nowcast >--------------------------------------------------------------
 
 cd "${NWC_PATH}"
-export PYTHONPATH="${TST_NWC_DIR}/apps:${TST_NWC_DIR}/apps/util"
+export PYTHONPATH="${TST_NWC_DIR}/apps:${CLS_PYLIB}"
 
 echo
 python3 "${TST_NWC_DIR}/apps/nwcInterpolate.py" --dry-run "${LARR_DRY[@]}" 2> /dev/null

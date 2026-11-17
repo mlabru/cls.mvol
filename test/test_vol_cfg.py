@@ -38,14 +38,15 @@ pytestmark = pytest.mark.skipif(shutil.which("bash") is None, reason="bash indis
 def _source(fdct_env: dict | None = None) -> subprocess.CompletedProcess:
     """
     carrega o vol_sync.sh sem o main e imprime CT_VARS, uma por linha, com
-    o ambiente limpo de VOL_*/MET_*/CLS_* herdados (menos CLS_LIB, do
-    conftest) mais fdct_env.  Sem CLS_ENV_FILE em fdct_env, nenhum cls.env é
+    o ambiente limpo de VOL_*/MET_*/CLS_* herdados (menos CLS_LIB e CLS_PYLIB,
+    do conftest) mais fdct_env.  Sem CLS_ENV_FILE em fdct_env, nenhum cls.env é
     carregado; valor None em fdct_env remove a variável
     """
     ldct_env = {ls: lv for ls, lv in os.environ.items()
                 if not ls.startswith(("VOL_", "MET_", "CLS_"))}
     ldct_env["CLS_ENV_FILE"] = os.devnull
     ldct_env["CLS_LIB"] = os.environ["CLS_LIB"]
+    ldct_env["CLS_PYLIB"] = os.environ["CLS_PYLIB"]
     ldct_env.update(fdct_env or {})
     ldct_env = {ls: lv for ls, lv in ldct_env.items() if lv is not None}
 
@@ -174,7 +175,7 @@ def test_cls_lib_do_cls_env_localiza_o_cls_common(tmp_path):
     lpth_lib.mkdir()
     (lpth_lib / "cls_common.sh").write_text(
         'cls_check_test_env() { echo "cls_common falso" >&2; }\n'
-        'cls_log() { :; }\ncheck_log_size() { :; }\n')
+        'cls_log() { :; }\ncheck_log_size() { :; }\ncls_setup_pythonpath() { :; }\n')
     lpth_env = tmp_path / "cls.env"
     lpth_env.write_text(f'CLS_LIB="${{CLS_LIB:-{lpth_lib}}}"\n')
 
@@ -189,6 +190,22 @@ def test_sem_cls_lib_falha_com_a_causa():
 
     assert 1 == lproc.returncode
     assert "CLS_LIB" in lproc.stderr
+
+def test_sem_cls_pylib_falha_com_a_causa():
+    # sem o pacote Python comum, volDBWriter/volScan nem importariam
+    lproc = _source({"CLS_PYLIB": None})
+
+    assert 1 == lproc.returncode
+    assert "CLS_PYLIB" in lproc.stderr
+
+def test_cls_pylib_vai_para_o_pythonpath():
+    lproc = subprocess.run(["bash", "-c", f'VOL_SYNC_NO_MAIN=true; source "{MPTH_ROOT}/vol_sync.sh"; '
+                                          'echo "$PYTHONPATH"'],
+                           capture_output=True, text=True,
+                           env={**os.environ, "CLS_ENV_FILE": os.devnull, "PYTHONPATH": ""})
+
+    assert 0 == lproc.returncode, lproc.stderr
+    assert os.environ["CLS_PYLIB"] == lproc.stdout.strip()
 
 def test_met_env_antigo_ainda_trava(tmp_path):
     # um env.sh antigo (MET_*) não pode desligar a trava em silêncio
