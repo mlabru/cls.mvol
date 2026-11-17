@@ -4,6 +4,8 @@
 # vol_cfg.sh
 # variáveis de configuração compartilhadas
 #
+# 2026.nov  mlabru  VOL_RETAIN_MIN_FREE_GB (guarda de disco do volPurge.py)
+#
 # 2026.nov  mlabru  heartbeats VOL_SYNC_OK_FILE/VOL_REGISTER_OK_FILE e o limite
 #                   VOL_CHECK_MAX_AGE_MIN (vol_check.sh)
 #
@@ -127,6 +129,14 @@ GI_LOG_MAX_SIZE=$((10 * 1024 * 1024))
 # .mvol um volume não pode mais ser reconvertido (ex.: com um preset novo)
 VOL_RETAIN_DAYS="${VOL_RETAIN_DAYS:-}"
 VOL_RETAIN_MAX_DAYS="${VOL_RETAIN_MAX_DAYS:-}"
+
+# guarda de disco (volPurge.py --min-free-gb): com menos de
+# VOL_RETAIN_MIN_FREE_GB GB livres no sistema de arquivos de VOL_SYNC_DIR,
+# apaga os .mvol mais antigos (já convertidos antes; pendentes só em último
+# caso; nunca PROCESSING) até voltar ao mínimo -- disco cheio faria o rsync
+# falhar e perder os dados novos.  Independe de VOL_RETAIN_DAYS; vazio =
+# desligada
+VOL_RETAIN_MIN_FREE_GB="${VOL_RETAIN_MIN_FREE_GB:-}"
 
 # < trava do ambiente de teste >-------------------------------------------------------
 

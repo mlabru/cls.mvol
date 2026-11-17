@@ -8,6 +8,7 @@ testes unitários de volPurge (retenção dos .mvol): idade pelo horário do
 volume, pendentes (view cappi_pending do nowcast ou status daqui), limite de
 disco, ausentes, sync-dir e dry-run
 
+2026.nov  mlabru  guarda de disco (--min-free-gb)
 2026.set  mlabru  initial version (Linux/Python)
 """
 # < imports >──────────────────────────────────────────────────────────────────────────
@@ -204,5 +205,109 @@ def test_main(env, tmp_path):
 
     with pytest.raises(SystemExit):
         vp.main([ls_db, "--sync-dir", str(lpth_sync), "--retain-days", "7", "--max-days", "3"])
+
+# < guarda de disco >──────────────────────────────────────────────────────────────────
+
+# -------------------------------------------------------------------------------------
+def _disk(fpth_sync, fi_capacity: int):
+    """
+    medidor de espaço falso: livre = capacidade - bytes dos .mvol do
+    sync-dir -- cada remoção libera espaço de verdade, sem depender do disco
+    """
+    def _free(fpth_dir):
+        return fi_capacity - sum(lp.stat().st_size for lp in fpth_sync.rglob("*.mvol"))
+
+    return _free
+
+def _guard(fs_db, fpth_sync, fi_capacity: int, fi_min_free: int, **fdct):
+    # mínimo em bytes, convertido para o GB que a interface recebe
+    return vp.purge(fs_db, fpth_sync, fdct.pop("retain", None), fi_now=MI_NOW,
+                    ff_min_free_gb=fi_min_free / vp.MI_GB,
+                    fn_free_bytes=_disk(fpth_sync, fi_capacity), **fdct)
+
+def test_disco_com_espaco_nao_apaga_nada(env):
+    ls_db, lpth_sync, add = env
+    add(MI_NOW - 1 * MI_DAY)
+
+    lctr = _guard(ls_db, lpth_sync, fi_capacity=10, fi_min_free=5)
+
+    assert 0 == lctr[vp.CS_DISK]
+    assert {MI_NOW - 1 * MI_DAY: 1} == _has_mvol(ls_db)
+
+def test_disco_apaga_os_mais_antigos_ate_o_minimo(env):
+    ls_db, lpth_sync, add = env
+    llst = [add(MI_NOW - li * MI_DAY) for li in (4, 3, 2, 1)]       # 4 bytes, todos DONE
+
+    # capacidade 4: livre 0; mínimo 2 -> os dois mais antigos saem
+    lctr = _guard(ls_db, lpth_sync, fi_capacity=4, fi_min_free=2)
+
+    assert 2 == lctr[vp.CS_DISK] and 0 == lctr[vp.CS_DISK_SHORT]
+    assert [False, False, True, True] == [lp.exists() for lp in llst]
+    assert {MI_NOW - 4 * MI_DAY: 0, MI_NOW - 3 * MI_DAY: 0,
+            MI_NOW - 2 * MI_DAY: 1, MI_NOW - 1 * MI_DAY: 1} == _has_mvol(ls_db)
+
+def test_disco_pendente_so_depois_dos_convertidos(env):
+    ls_db, lpth_sync, add = env
+    lpth_pend = add(MI_NOW - 9 * MI_DAY, vd.CI_STATUS_NEW)    # mais antigo, mas pendente
+    lpth_done = add(MI_NOW - 1 * MI_DAY)
+
+    lctr = _guard(ls_db, lpth_sync, fi_capacity=2, fi_min_free=1)
+    assert (lpth_pend.exists(), lpth_done.exists()) == (True, False)
+    assert 0 == lctr[vp.CS_FORCED]
+
+    # sem convertido sobrando, o pendente sai (último recurso, com aviso)
+    lctr = _guard(ls_db, lpth_sync, fi_capacity=1, fi_min_free=1)
+    assert not lpth_pend.exists()
+    assert 1 == lctr[vp.CS_FORCED] and 1 == lctr[vp.CS_DISK]
+
+def test_disco_nunca_apaga_processing_e_acusa_falta(env):
+    ls_db, lpth_sync, add = env
+    lpth = add(MI_NOW - 9 * MI_DAY, vd.CI_STATUS_PROCESSING)
+
+    lctr = _guard(ls_db, lpth_sync, fi_capacity=1, fi_min_free=1)
+
+    assert lpth.exists()
+    assert 0 == lctr[vp.CS_DISK] and 1 == lctr[vp.CS_DISK_SHORT]
+
+def test_disco_dry_run_estima_e_nao_apaga(env):
+    ls_db, lpth_sync, add = env
+    llst = [add(MI_NOW - li * MI_DAY) for li in (3, 2, 1)]
+
+    lctr = _guard(ls_db, lpth_sync, fi_capacity=3, fi_min_free=2, fb_dry_run=True)
+
+    # dois "apagariam" (estimativa pelo tamanho), nada sai de fato
+    assert 2 == lctr[vp.CS_DISK] and 0 == lctr[vp.CS_DISK_SHORT]
+    assert all(lp.exists() for lp in llst)
+    assert {1} == set(_has_mvol(ls_db).values())
+
+def test_disco_depois_da_retencao_por_idade_sem_repetir(env):
+    ls_db, lpth_sync, add = env
+    lpth_old = add(MI_NOW - 9 * MI_DAY)                       # sai pela idade (7 d)
+    lpth_mid = add(MI_NOW - 2 * MI_DAY)
+    lpth_new = add(MI_NOW - 1 * MI_DAY)
+
+    # capacidade 2: depois da idade, livre 0; mínimo 1 -> só mais um sai
+    lctr = _guard(ls_db, lpth_sync, fi_capacity=2, fi_min_free=1, retain=7)
+
+    assert (lpth_old.exists(), lpth_mid.exists(), lpth_new.exists()) == (False, False, True)
+    assert 1 == lctr[vp.CS_REMOVED] and 1 == lctr[vp.CS_DISK]
+
+def test_main_disco_insuficiente_e_rc_1(env, monkeypatch):
+    ls_db, lpth_sync, add = env
+    add(MI_NOW - 9 * MI_DAY, vd.CI_STATUS_PROCESSING)
+    monkeypatch.setattr(vp, "_free_bytes", lambda fpth: 0)
+
+    assert 1 == vp.main([ls_db, "--sync-dir", str(lpth_sync), "--min-free-gb", "1"])
+
+def test_args_da_guarda_de_disco(env):
+    ls_db, lpth_sync, _ = env
+    lt_base = (ls_db, "--sync-dir", str(lpth_sync))
+
+    # só a guarda de disco basta
+    assert 1.5 == vp.arg_parse([*lt_base, "--min-free-gb", "1.5"]).min_free_gb
+
+    for llst in ([], ["--min-free-gb", "0"], ["--min-free-gb", "1", "--max-days", "9"]):
+        with pytest.raises(SystemExit):
+            vp.arg_parse([*lt_base, *llst])
 
 # < the end >──────────────────────────────────────────────────────────────────────────
