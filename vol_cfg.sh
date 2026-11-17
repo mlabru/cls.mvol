@@ -4,17 +4,23 @@
 # vol_cfg.sh
 # variáveis de configuração compartilhadas
 #
+# 2026.nov  mlabru  - cls.env (CLS_ENV_FILE, padrão ~/.config/cls/cls.env)
+#                     carregado antes dos padrões; cls_common.sh vem de
+#                     CLS_LIB, com o symlink ao lado do script como reserva
+#                   - prefixo met -> cls (cls_log, cls_check_test_env,
+#                     CLS_ENV, CLS_TST_ROOT)
+#
 # 2026.out  mlabru  - comentários (refatoração para legibilidade; valores
 #                     inalterados)
-#                   - trava via met_check_test_env (cls_common.sh): resolve os
+#                   - trava via cls_check_test_env (cls_common.sh): resolve os
 #                     caminhos com realpath -m -- antes um caminho com ".."
 #                     (<raiz>/../producao) passava pelo padrão "<raiz>"/*
 #                   - ambiente de teste (tst_env/, 03.dat/tst): VOL_SYNC_DIR,
 #                     VOL_PATH e VOL_DBASE_FILE aceitam override pelo
 #                     ambiente; servidor remoto (VOL_REMOTE_*) veio do
 #                     vol_sync.sh para cá, também sobrescrevível
-#                   - trava MET_ENV=test: recusa servidor que não seja
-#                     localhost e caminho fora de MET_TST_ROOT -- o sync usa
+#                   - trava CLS_ENV=test: recusa servidor que não seja
+#                     localhost e caminho fora de CLS_TST_ROOT -- o sync usa
 #                     --remove-source-files, e um teste apontado para o
 #                     servidor real apagaria os .mvol do radar
 #
@@ -48,6 +54,13 @@
 # shellcheck shell=bash
 
 # < configuração compartilhada >-------------------------------------------------------
+
+# ambiente da instalação (cls.env: CLS_LIB e sobreposições), carregado
+# antes dos padrões abaixo; "set -a" exporta para os programas Python.
+# Precedência: ambiente do processo > cls.env > padrões deste arquivo (ver
+# cls.common/etc/cls.env.example)
+CLS_ENV_FILE="${CLS_ENV_FILE:-${HOME:-}/.config/cls/cls.env}"
+if [ -r "${CLS_ENV_FILE}" ]; then set -a; source "${CLS_ENV_FILE}"; set +a; fi
 
 # cada VOL_X="${VOL_X:-padrão}" abaixo usa o valor do ambiente, se houver
 # (ambiente de teste, tst_env/), senão o padrão de produção
@@ -95,13 +108,13 @@ VOL_RETAIN_MAX_DAYS="${VOL_RETAIN_MAX_DAYS:-}"
 
 # < trava do ambiente de teste >-------------------------------------------------------
 
-# met_check_test_env (cls_common.sh, symlink para 04.dvl/bash, comum aos
-# projetos met)
-source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/cls_common.sh"
+# cls_check_test_env (cls_common.sh, de CLS_LIB ou do symlink ao lado; comum
+# aos projetos cls)
+source "${CLS_LIB:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}/cls_common.sh"
 
-# com MET_ENV=test (tst_env/env.sh), nada pode apontar para fora de
-# MET_TST_ROOT nem para um servidor que não seja esta máquina
-met_check_test_env -r "${VOL_REMOTE_IP}" "${VOL_SYNC_DIR}" "${VOL_PATH}" \
+# com CLS_ENV=test (tst_env/env.sh), nada pode apontar para fora de
+# CLS_TST_ROOT nem para um servidor que não seja esta máquina
+cls_check_test_env -r "${VOL_REMOTE_IP}" "${VOL_SYNC_DIR}" "${VOL_PATH}" \
                       "${VOL_DBASE_FILE}" "${VOL_REMOTE_DIR}" || exit 1
 
 # < the end >--------------------------------------------------------------------------

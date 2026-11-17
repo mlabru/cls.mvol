@@ -36,8 +36,8 @@ die() { echo "[error]: $*" >&2; exit 1; }
 # a raiz precisa ser a do env.sh, um ambiente de teste, e não conter a origem
 LS_REAL="$(realpath -e "${LS_ROOT}")"
 
-[ "${MET_ENV:-}" = test ] || die "env.sh sem MET_ENV=test"
-[ "${LS_REAL}" = "$(realpath -m "${MET_TST_ROOT}")" ] || die "raiz ${LS_REAL} != MET_TST_ROOT ${MET_TST_ROOT}"
+[ "${CLS_ENV:-}" = test ] || die "env.sh sem CLS_ENV=test"
+[ "${LS_REAL}" = "$(realpath -m "${CLS_TST_ROOT}")" ] || die "raiz ${LS_REAL} != CLS_TST_ROOT ${CLS_TST_ROOT}"
 [ "${LS_REAL}" != / ] && [ "${LS_REAL}" != "${HOME}" ] || die "raiz perigosa: ${LS_REAL}"
 
 case "$(realpath -m "${TST_SRC}")/" in

@@ -19,6 +19,7 @@ fixtures e stubs compartilhados pela suíte de testes unitários
 # < imports >--------------------------------------------------------------------------
 
 # python library
+import os
 import pathlib
 import sys
 
@@ -33,5 +34,11 @@ PTH_APPS = PTH_ROOT / "apps"
 # mas conftest.py pode rodar antes disso em alguns cenários de import)
 if str(PTH_APPS) not in sys.path:
     sys.path.insert(0, str(PTH_APPS))
+
+# < ambiente cls >---------------------------------------------------------------------
+
+# a suíte não depende do cls.env de quem a roda (~/.config/cls/cls.env): os
+# scripts shell testados herdam este ambiente e não carregam nada de lá
+os.environ["CLS_ENV_FILE"] = os.devnull
 
 # < the end >--------------------------------------------------------------------------

@@ -8,7 +8,7 @@
 # -> 25.oflow (+ 21.mrad), isolado de produção e do 03.dat/data compartilhado:
 #
 #   <raiz>/                     (padrão: 03.dat/tst)
-#     env.sh      variáveis que redirecionam os três projetos (MET_ENV=test)
+#     env.sh      variáveis que redirecionam os três projetos (CLS_ENV=test)
 #     inbox/      o "servidor" do vol_sync.sh (ssh localhost), alimentado
 #                 por tst_feed.py com hardlinks de TST_SRC
 #     radar/      VOL_SYNC_DIR (destino do rsync)
@@ -25,6 +25,9 @@
 #
 # uso: tst_setup.sh [raiz]          (TST_SRC sobrescreve a origem dos .mvol)
 #
+# 2026.nov  mlabru  projetos em <nn>.<proj>/cls.<proj> (era <nn>.<proj>/04.dvl);
+#                   env.sh com CLS_ENV/CLS_TST_ROOT (eram MET_*), CLS_LIB e
+#                   CLS_ENV_FILE=/dev/null (não herda o cls.env da máquina)
 # 2026.out  mlabru  21.mrad sem RSM_REMOTE_*: o banco do mvol é a única fonte
 #                   do mrad (sem ssh/find nos .mvol)
 # 2026.out  mlabru  27.nowcast (era 25.nowcast, renumerado): TST_NWC_DIR
@@ -45,19 +48,22 @@ set -euo pipefail
 
 # < configuração >---------------------------------------------------------------------
 
-# tst_env/, 21.mvol/04.dvl e a raiz met/ dos projetos
+# tst_env/, 21.mvol/cls.mvol e a raiz clsim/ dos projetos
 TST_ENV_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 TST_MVOL_DIR="$( cd "${TST_ENV_DIR}/.." && pwd )"
-TST_MET_DIR="$( cd "${TST_MVOL_DIR}/../.." && pwd )"
+TST_CLS_DIR="$( cd "${TST_MVOL_DIR}/../.." && pwd )"
 
 # projetos irmãos
-TST_MRAD_DIR="${TST_MET_DIR}/21.mrad/04.dvl"
-TST_NWC_DIR="${TST_MET_DIR}/27.nowcast/04.dvl"
-TST_OFL_DIR="${TST_MET_DIR}/25.oflow/04.dvl"
+TST_MRAD_DIR="${TST_CLS_DIR}/21.mrad/cls.mrad"
+TST_NWC_DIR="${TST_CLS_DIR}/27.nowcast/cls.nowcast"
+TST_OFL_DIR="${TST_CLS_DIR}/25.oflow/cls.oflow"
+
+# biblioteca comum (repo cls.common)
+TST_CLS_LIB="${TST_CLS_DIR}/cls.common/bash"
 
 # raiz do ambiente e origem dos .mvol reais
-TST_ROOT="$(realpath -m "${1:-${TST_MET_DIR}/03.dat/tst}")"
-TST_SRC="$(realpath -m "${TST_SRC:-${TST_MET_DIR}/03.dat/lmc15.ori}")"
+TST_ROOT="$(realpath -m "${1:-${TST_CLS_DIR}/03.dat/tst}")"
+TST_SRC="$(realpath -m "${TST_SRC:-${TST_CLS_DIR}/03.dat/lmc15.ori}")"
 
 # < funções >--------------------------------------------------------------------------
 
@@ -105,10 +111,15 @@ cat > "${TST_ROOT}/env.sh" <<EOF
 # gerado por ${TST_ENV_DIR}/tst_setup.sh em $(date -u '+%F %T')Z -- não editar
 # uso: source ${TST_ROOT}/env.sh
 
-# trava (vol_cfg.sh, rsm_cfg.sh, nwc_*.sh): nada fora de MET_TST_ROOT,
+# trava (vol_cfg.sh, rsm_cfg.sh, nwc_*.sh): nada fora de CLS_TST_ROOT,
 # servidor só localhost
-export MET_ENV=test
-export MET_TST_ROOT="${TST_ROOT}"
+export CLS_ENV=test
+export CLS_TST_ROOT="${TST_ROOT}"
+
+# o teste não herda o cls.env da máquina (~/.config/cls/cls.env): tudo o que
+# ele precisa está neste arquivo
+export CLS_ENV_FILE=/dev/null
+export CLS_LIB="${TST_CLS_LIB}"
 
 # código e origem dos dados
 export TST_ENV_DIR="${TST_ENV_DIR}"

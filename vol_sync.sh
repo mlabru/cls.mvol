@@ -36,7 +36,7 @@
 #                     (date -u), como o log()
 #                   - REMOTE_* vêm de VOL_REMOTE_* (vol_cfg.sh), sobrescrevíveis
 #                     pelo ambiente de teste (ssh localhost + inbox local);
-#                     a trava MET_ENV=test do vol_cfg.sh impede o servidor real
+#                     a trava CLS_ENV=test do vol_cfg.sh impede o servidor real
 #
 # 2026.set  mlabru  - listagem com caminho relativo a REMOTE_DIR (find
 #                     -printf '%P'): o catalog.db não guarda mais o prefixo

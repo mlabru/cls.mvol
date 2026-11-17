@@ -38,7 +38,7 @@ source "${LS_ROOT}/env.sh"
 python3 - <<'EOF'
 import json, os, pathlib, sqlite3
 
-lpth_root = pathlib.Path(os.environ["MET_TST_ROOT"])
+lpth_root = pathlib.Path(os.environ["CLS_TST_ROOT"])
 lpth_db = pathlib.Path(os.environ["VOL_DBASE_FILE"])
 
 lpth_cursor = lpth_root / "feed" / "cursor.json"

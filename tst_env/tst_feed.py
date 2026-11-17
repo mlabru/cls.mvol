@@ -11,7 +11,7 @@ chegada dos volumes do radar.
 
 - hardlink (os.link): não ocupa espaço e nunca altera o original -- o rsync
   --remove-source-files do vol_sync.sh só remove o link do inbox
-- cursor em <MET_TST_ROOT>/feed/cursor.json: cada execução continua de onde
+- cursor em <CLS_TST_ROOT>/feed/cursor.json: cada execução continua de onde
   a anterior parou
 - --drop-every K / --drop P: deixa volumes de fora (nunca entregues), para
   criar lacunas e exercitar a interpolação; os descartados vão para
@@ -68,10 +68,10 @@ def check_env() -> tuple:
 
     :raises SystemExit: fora de um ambiente de teste coerente
     """
-    if os.environ.get("MET_ENV") != "test":
-        sys.exit("tst_feed: MET_ENV=test não definido (carregue o env.sh do ambiente)")
+    if os.environ.get("CLS_ENV") != "test":
+        sys.exit("tst_feed: CLS_ENV=test não definido (carregue o env.sh do ambiente)")
 
-    lpth_root = pathlib.Path(os.environ["MET_TST_ROOT"]).resolve()
+    lpth_root = pathlib.Path(os.environ["CLS_TST_ROOT"]).resolve()
     lpth_src = pathlib.Path(os.environ["TST_SRC"]).resolve()
     lpth_inbox = pathlib.Path(os.environ["VOL_REMOTE_DIR"]).resolve()
 
