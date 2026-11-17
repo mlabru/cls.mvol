@@ -4,6 +4,13 @@
 # vol_cfg.sh
 # variáveis de configuração compartilhadas
 #
+# 2026.nov  mlabru  CLS_LIB obrigatória (passo 2): sai o symlink cls_common.sh
+#                   da raiz do repo; sem cls.env/CLS_LIB, erro explícito
+#
+# 2026.nov  mlabru  - banco/CAPPIs compartilhados: sem sobreposição própria,
+#                     vêm de CLS_DBASE_FILE/CLS_CAPPI_DIR (cls.env, sob
+#                     CLS_ROOT) antes do padrão antigo
+#
 # 2026.nov  mlabru  - cls.env (CLS_ENV_FILE, padrão ~/.config/cls/cls.env)
 #                     carregado antes dos padrões; cls_common.sh vem de
 #                     CLS_LIB, com o symlink ao lado do script como reserva
@@ -86,7 +93,8 @@ VOL_TEMP="${VOL_DATA}/temp"
 # observações de todo arquivo listado (fullpath, tempo do nome e mtime),
 # para que se reconstrua a recepção mesmo depois que o .mvol de origem for
 # removido
-VOL_DBASE_FILE="${VOL_DBASE_FILE:-${VOL_DATA}/dbase/catalog.db}"
+# ordem: VOL_DBASE_FILE > CLS_DBASE_FILE (cls.env, raiz CLS_ROOT) > padrão
+VOL_DBASE_FILE="${VOL_DBASE_FILE:-${CLS_DBASE_FILE:-${VOL_DATA}/dbase/catalog.db}}"
 
 # servidor dos .mvol (vol_sync.sh): listado por ssh e baixado por rsync com
 # --remove-source-files -- a origem é APAGADA depois da cópia
@@ -108,9 +116,15 @@ VOL_RETAIN_MAX_DAYS="${VOL_RETAIN_MAX_DAYS:-}"
 
 # < trava do ambiente de teste >-------------------------------------------------------
 
-# cls_check_test_env (cls_common.sh, de CLS_LIB ou do symlink ao lado; comum
-# aos projetos cls)
-source "${CLS_LIB:-$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)}/cls_common.sh"
+# cls_check_test_env (cls_common.sh, de CLS_LIB, do cls.env;
+# comum aos projetos cls)
+# CLS_LIB (cls.env) é obrigatória: sem ela não há cls_common.sh -- falha
+# aqui, com a causa, em vez de num "command not found" mais adiante
+if [ ! -r "${CLS_LIB:-}/cls_common.sh" ]; then
+    echo "[error]: CLS_LIB='${CLS_LIB:-}' sem cls_common.sh; defina-a no cls.env (${CLS_ENV_FILE:-~/.config/cls/cls.env})" >&2
+    exit 1
+fi
+source "${CLS_LIB}/cls_common.sh"
 
 # com CLS_ENV=test (tst_env/env.sh), nada pode apontar para fora de
 # CLS_TST_ROOT nem para um servidor que não seja esta máquina
