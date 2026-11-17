@@ -59,7 +59,7 @@ def _source(fdct_env: dict | None = None) -> subprocess.CompletedProcess:
 # -------------------------------------------------------------------------------------
 def _tst_env(fpth_root: pathlib.Path, **kwargs) -> dict:
     """
-    ambiente de teste coerente (como o env.sh do cls.tst), com overrides
+    ambiente de teste coerente (como o env.sh do cls.test), com overrides
     """
     ldct = {"CLS_ENV": "test",
             "CLS_TST_ROOT": str(fpth_root),

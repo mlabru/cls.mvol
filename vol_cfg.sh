@@ -25,7 +25,7 @@
 #                   - trava via cls_check_test_env (cls_common.sh): resolve os
 #                     caminhos com realpath -m -- antes um caminho com ".."
 #                     (<raiz>/../producao) passava pelo padrão "<raiz>"/*
-#                   - ambiente de teste (cls.tst, 03.dat/tst): VOL_SYNC_DIR,
+#                   - ambiente de teste (cls.test, 03.dat/tst): VOL_SYNC_DIR,
 #                     VOL_PATH e VOL_DBASE_FILE aceitam override pelo
 #                     ambiente; servidor remoto (VOL_REMOTE_*) veio do
 #                     vol_sync.sh para cá, também sobrescrevível
@@ -73,7 +73,7 @@ CLS_ENV_FILE="${CLS_ENV_FILE:-${HOME:-}/.config/cls/cls.env}"
 if [ -r "${CLS_ENV_FILE}" ]; then set -a; source "${CLS_ENV_FILE}"; set +a; fi
 
 # cada VOL_X="${VOL_X:-padrão}" abaixo usa o valor do ambiente, se houver
-# (ambiente de teste, cls.tst), senão o padrão de produção
+# (ambiente de teste, cls.test), senão o padrão de produção
 
 # destino local do rsync (vol_sync.sh), diretório varrido por volScan.py e
 # podado por volPurge.py (vol_register.sh)
@@ -129,7 +129,7 @@ if [ ! -r "${CLS_LIB:-}/cls_common.sh" ]; then
 fi
 source "${CLS_LIB}/cls_common.sh"
 
-# com CLS_ENV=test (env.sh do cls.tst), nada pode apontar para fora de
+# com CLS_ENV=test (env.sh do cls.test), nada pode apontar para fora de
 # CLS_TST_ROOT nem para um servidor que não seja esta máquina
 cls_check_test_env -r "${VOL_REMOTE_IP}" "${VOL_SYNC_DIR}" "${VOL_PATH}" \
                       "${VOL_DBASE_FILE}" "${VOL_REMOTE_DIR}" || exit 1
