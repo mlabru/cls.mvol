@@ -8,6 +8,7 @@ testes unitários de volPurge (retenção dos .mvol): idade pelo horário do
 volume, pendentes (view cappi_pending do nowcast ou status daqui), limite de
 disco, ausentes, sync-dir e dry-run
 
+2026.nov  mlabru  limites da guarda de disco (piso de idade, teto por execução)
 2026.nov  mlabru  guarda de disco (--min-free-gb)
 2026.set  mlabru  initial version (Linux/Python)
 """
@@ -16,6 +17,7 @@ disco, ausentes, sync-dir e dry-run
 # python library
 import pathlib
 import sqlite3
+import time
 from unittest import mock
 
 # pytest
@@ -292,6 +294,71 @@ def test_disco_depois_da_retencao_por_idade_sem_repetir(env):
     assert (lpth_old.exists(), lpth_mid.exists(), lpth_new.exists()) == (False, False, True)
     assert 1 == lctr[vp.CS_REMOVED] and 1 == lctr[vp.CS_DISK]
 
+def test_disco_piso_de_idade_protege_os_recentes(env):
+    ls_db, lpth_sync, add = env
+    lpth_old = add(MI_NOW - 1 * MI_DAY)
+    lpth_new = add(MI_NOW - 2 * 3600, vd.CI_STATUS_NEW)        # 2 h: abaixo do piso de 6 h
+
+    # disco cheio por "outra coisa" (capacidade 0): sem o piso, os dois sairiam
+    lctr = _guard(ls_db, lpth_sync, fi_capacity=0, fi_min_free=1)
+
+    assert (lpth_old.exists(), lpth_new.exists()) == (False, True)
+    assert 1 == lctr[vp.CS_DISK] and 1 == lctr[vp.CS_DISK_SHORT]
+    assert 1 == _has_mvol(ls_db)[MI_NOW - 2 * 3600]
+
+def test_disco_piso_zero_desliga(env):
+    ls_db, lpth_sync, add = env
+    lpth_new = add(MI_NOW - 2 * 3600)
+
+    lctr = _guard(ls_db, lpth_sync, fi_capacity=1, fi_min_free=1, ff_disk_min_age_h=0.)
+
+    assert not lpth_new.exists()
+    assert 1 == lctr[vp.CS_DISK] and 0 == lctr[vp.CS_DISK_SHORT]
+
+def test_disco_piso_nao_para_a_busca_nos_pendentes(env):
+    ls_db, lpth_sync, add = env
+    lpth_done = add(MI_NOW - 1 * 3600)                         # convertido, mas recente
+    lpth_pend = add(MI_NOW - 9 * MI_DAY, vd.CI_STATUS_NEW)     # pendente antigo
+
+    # a lista vem por (pendente, horário): o recente pulado não pode
+    # encerrar a busca antes dos pendentes antigos
+    lctr = _guard(ls_db, lpth_sync, fi_capacity=1, fi_min_free=1)
+
+    assert (lpth_done.exists(), lpth_pend.exists()) == (True, False)
+    assert 1 == lctr[vp.CS_FORCED]
+
+@pytest.mark.parametrize("fb_dry_run", [False, True])
+def test_disco_teto_por_execucao(env, fb_dry_run):
+    ls_db, lpth_sync, add = env
+    llst = [add(MI_NOW - li * MI_DAY) for li in (4, 3, 2, 1)]       # 4 bytes
+
+    # o mínimo pediria apagar os 4; o teto (2 bytes) para no segundo
+    lctr = _guard(ls_db, lpth_sync, fi_capacity=4, fi_min_free=4,
+                  ff_disk_max_gb=2 / vp.MI_GB, fb_dry_run=fb_dry_run)
+
+    assert 2 == lctr[vp.CS_DISK]
+    assert 1 == lctr[vp.CS_DISK_CAP] and 1 == lctr[vp.CS_DISK_SHORT]
+
+    if fb_dry_run:
+        assert all(lp.exists() for lp in llst)
+
+    else:
+        assert [False, False, True, True] == [lp.exists() for lp in llst]
+
+def test_main_teto_atingido_e_rc_1(env, monkeypatch):
+    ls_db, lpth_sync, add = env
+    # main usa o relógio real (o MI_NOW dos testes está no futuro e cairia
+    # abaixo do piso de idade)
+    li_now = int(time.time())
+    add(li_now - 9 * MI_DAY)
+    add(li_now - 8 * MI_DAY)
+    monkeypatch.setattr(vp, "_free_bytes", lambda fpth: 0)
+
+    # cada .mvol tem 1 byte; teto de 1 byte: apaga um e para
+    assert 1 == vp.main([ls_db, "--sync-dir", str(lpth_sync), "--min-free-gb", "1",
+                         "--disk-max-gb", str(1 / vp.MI_GB)])
+    assert 1 == sorted(_has_mvol(ls_db).values()).count(0)
+
 def test_main_disco_insuficiente_e_rc_1(env, monkeypatch):
     ls_db, lpth_sync, add = env
     add(MI_NOW - 9 * MI_DAY, vd.CI_STATUS_PROCESSING)
@@ -306,7 +373,17 @@ def test_args_da_guarda_de_disco(env):
     # só a guarda de disco basta
     assert 1.5 == vp.arg_parse([*lt_base, "--min-free-gb", "1.5"]).min_free_gb
 
-    for llst in ([], ["--min-free-gb", "0"], ["--min-free-gb", "1", "--max-days", "9"]):
+    # limites da guarda: piso de 6 h por padrão, teto desligado
+    largs = vp.arg_parse([*lt_base, "--min-free-gb", "1"])
+    assert (vp.MF_DISK_MIN_AGE_H, None) == (largs.disk_min_age_hours, largs.disk_max_gb)
+    largs = vp.arg_parse([*lt_base, "--min-free-gb", "1", "--disk-min-age-hours", "0",
+                          "--disk-max-gb", "20"])
+    assert (0., 20.) == (largs.disk_min_age_hours, largs.disk_max_gb)
+
+    for llst in ([], ["--min-free-gb", "0"], ["--min-free-gb", "1", "--max-days", "9"],
+                 ["--min-free-gb", "1", "--disk-min-age-hours", "-1"],
+                 ["--min-free-gb", "1", "--disk-max-gb", "0"],
+                 ["--retain-days", "7", "--disk-max-gb", "5"]):
         with pytest.raises(SystemExit):
             vp.arg_parse([*lt_base, *llst])
 

@@ -1,15 +1,13 @@
 .bkp/
 .claude/
 .doc/
-.gpt/
 logs/
-.new/
-.old/
 __pycache__/
 .pytest_cache/
-tst_env/
-.venv/
 
+# sem barra: casa também com um .venv que seja symlink (".venv/" só casa
+# com diretório)
+.venv
 .env
 
 *~
@@ -19,13 +17,16 @@ tst_env/
 *.mvol
 *.npy
 
-# bancos SQLite (o catalog.db compartilhado mora em 27.nowcast/04.dvl/data/dbase)
+# bancos SQLite (o catalog.db compartilhado vem do cls.env, CLS_DBASE_FILE)
 *.db
 *.db-shm
 *.db-wal
 
-# intermediários por execução (VOL_TEMP; ex: PNGs do volViewer em data/temp/viewer)
+# intermediários por execução (VOL_TEMP)
 data/temp/
+
+# estado dos crons (locks, heartbeats)
+data/state/
 
 # links locais para os dados da raiz da instalação (CLS_ROOT); os scripts
 # não dependem deles (banco/CAPPIs vêm do cls.env)

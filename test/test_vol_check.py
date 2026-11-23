@@ -182,6 +182,23 @@ def test_register_sem_retencao_tambem_grava_heartbeat(tmp_path):
     assert "rc=0" in lproc.stdout, lproc.stderr
     assert _ok_file(tmp_path, "vol_register").exists()
 
+@pytest.mark.parametrize("fdct_env, fs_expected", [
+    ({"VOL_RETAIN_MIN_FREE_GB": "50"}, "--min-free-gb 50"),
+    ({"VOL_RETAIN_MIN_FREE_GB": "50", "VOL_RETAIN_DISK_MIN_AGE_H": "12",
+      "VOL_RETAIN_DISK_MAX_GB": "20"}, "--min-free-gb 50 --disk-min-age-hours 12 --disk-max-gb 20"),
+    # os limites só valem com a guarda ligada
+    ({"VOL_RETAIN_DAYS": "7", "VOL_RETAIN_DISK_MAX_GB": "20"}, "--retain-days 7"),
+])
+def test_register_repassa_os_limites_da_guarda(tmp_path, fdct_env, fs_expected):
+    lpth_args = tmp_path / "args"
+    lproc = _bash(tmp_path, "vol_register",
+                  f'mkdir -p "${{VOL_LOGS}}"; python3() {{ echo "$*" > "{lpth_args}"; }}; '
+                  'run_purge; echo "rc=$?"',
+                  **fdct_env)
+
+    assert "rc=0" in lproc.stdout, lproc.stderr
+    assert lpth_args.read_text().strip().endswith(fs_expected)
+
 # < vol_check.sh >─────────────────────────────────────────────────────────────────────
 
 def _heartbeat(fpth_tmp, fs_name: str, fi_age_s: int) -> None:
