@@ -4,6 +4,9 @@
 # vol_cfg.sh
 # variáveis de configuração compartilhadas
 #
+# 2026.nov  mlabru  VOL_RETAIN_DISK_MIN_AGE_H e VOL_RETAIN_DISK_MAX_GB (piso de
+#                   idade e teto por execução da guarda de disco)
+#
 # 2026.nov  mlabru  VOL_RETAIN_MIN_FREE_GB (guarda de disco do volPurge.py)
 #
 # 2026.nov  mlabru  heartbeats VOL_SYNC_OK_FILE/VOL_REGISTER_OK_FILE e o limite
@@ -137,6 +140,17 @@ VOL_RETAIN_MAX_DAYS="${VOL_RETAIN_MAX_DAYS:-}"
 # falhar e perder os dados novos.  Independe de VOL_RETAIN_DAYS; vazio =
 # desligada
 VOL_RETAIN_MIN_FREE_GB="${VOL_RETAIN_MIN_FREE_GB:-}"
+
+# limites da guarda de disco (só valem com VOL_RETAIN_MIN_FREE_GB):
+# - VOL_RETAIN_DISK_MIN_AGE_H: a guarda nunca apaga um volume mais novo que
+#   isto, em horas (vazio = o padrão do volPurge.py, 6 h; 0 = sem piso) --
+#   protege os dados recém-chegados quando o disco enche por outro motivo;
+# - VOL_RETAIN_DISK_MAX_GB: a guarda apaga no máximo isto por execução
+#   (vazio = sem teto).  Atingido o teto, o vol_register.sh sai com rc 1, sem
+#   heartbeat, e o vol_check.sh alerta.  Dimensionar pelo disco de produção:
+#   a recepção é da ordem de 3 GB/dia
+VOL_RETAIN_DISK_MIN_AGE_H="${VOL_RETAIN_DISK_MIN_AGE_H:-}"
+VOL_RETAIN_DISK_MAX_GB="${VOL_RETAIN_DISK_MAX_GB:-}"
 
 # < trava do ambiente de teste >-------------------------------------------------------
 

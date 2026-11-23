@@ -23,6 +23,9 @@
 # bloqueiam o registro do que já chegou (o rsync só renomeia para *.mvol
 # arquivos completos).
 #
+# 2026.nov  mlabru  limites da guarda de disco: VOL_RETAIN_DISK_MIN_AGE_H e
+#                   VOL_RETAIN_DISK_MAX_GB repassados ao volPurge.py
+#
 # 2026.nov  mlabru  guarda de disco: volPurge.py também roda só com
 #                   VOL_RETAIN_MIN_FREE_GB (--min-free-gb), sem VOL_RETAIN_DAYS
 #
@@ -114,6 +117,15 @@ run_purge() {
     # guarda de disco
     if [ -n "${VOL_RETAIN_MIN_FREE_GB}" ]; then
         larr_purge_args+=(--min-free-gb "${VOL_RETAIN_MIN_FREE_GB}")
+
+        # limites da guarda (vazios = padrões do volPurge.py)
+        if [ -n "${VOL_RETAIN_DISK_MIN_AGE_H}" ]; then
+            larr_purge_args+=(--disk-min-age-hours "${VOL_RETAIN_DISK_MIN_AGE_H}")
+        fi
+
+        if [ -n "${VOL_RETAIN_DISK_MAX_GB}" ]; then
+            larr_purge_args+=(--disk-max-gb "${VOL_RETAIN_DISK_MAX_GB}")
+        fi
     fi
 
     python3 "${LIB_DIR}/apps/volPurge.py" "${VOL_DBASE_FILE}" "${larr_purge_args[@]}" \
